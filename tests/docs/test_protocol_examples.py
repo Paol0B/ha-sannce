@@ -100,3 +100,14 @@ def test_example_is_referenced_in_doc(example_id):
 )
 def test_http_channel_examples_state_channel(example):
     assert type(example.get("fields", {}).get("channel")) is int
+
+
+CHECKLIST = DOCS / "hardware-checklist.md"
+
+
+@pytest.mark.parametrize(
+    "example_id",
+    [ex["id"] for ex in load_examples() if ex["status"] != "verified"],
+)
+def test_unverified_example_has_hardware_check(example_id):
+    assert f"`{example_id}`" in CHECKLIST.read_text(encoding="utf-8")
