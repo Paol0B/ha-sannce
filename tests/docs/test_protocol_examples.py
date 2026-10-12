@@ -30,6 +30,10 @@ REQUIRED_IDS: set[str] = {
     "event_smart_vehicle",
     "event_vca_intrusion",
     "event_video_cover",
+    "talk_start_request",
+    "talk_refused_busy",
+    "talk_audio_frame_g711a",
+    "talk_stop_request",
 }
 
 
