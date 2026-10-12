@@ -24,6 +24,12 @@ REQUIRED_IDS: set[str] = {
     "logon_request_password_with_tab",
     "logoff_request",
     "heartbeat_request",
+    "event_motion_start",
+    "event_motion_stop",
+    "event_smart_person",
+    "event_smart_vehicle",
+    "event_vca_intrusion",
+    "event_video_cover",
 }
 
 
