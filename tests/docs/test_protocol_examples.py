@@ -19,6 +19,10 @@ EVIDENCE_PATTERN = re.compile(r"^(lib[A-Za-z0-9_]+\.so:.+@0x[0-9a-f]+|java:[^:]+
 REQUIRED_IDS: set[str] = {
     "framing_parameter_get_request",
     "framing_two_messages_one_read",
+    "logon_request",
+    "logon_reply_success",
+    "logon_request_password_with_tab",
+    "logoff_request",
 }
 
 
