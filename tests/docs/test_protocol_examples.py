@@ -34,6 +34,8 @@ REQUIRED_IDS: set[str] = {
     "talk_refused_busy",
     "talk_audio_frame_g711a",
     "talk_stop_request",
+    "discovery_seek_request",
+    "discovery_reply",
 }
 
 
