@@ -87,8 +87,16 @@ def test_example_is_referenced_in_doc(example_id):
 
 @pytest.mark.parametrize(
     "example",
-    [ex for ex in load_examples() if ex["transport"] == "http" and "/channels/" in ex["text"]],
+    [
+        ex
+        for ex in load_examples()
+        if ex["transport"] == "http"
+        and (
+            "/channels/" in ex.get("text", "")
+            or "/channels/" in ex.get("fields", {}).get("path", "")
+        )
+    ],
     ids=lambda ex: ex["id"],
 )
 def test_http_channel_examples_state_channel(example):
-    assert isinstance(example["fields"].get("channel"), int)
+    assert type(example.get("fields", {}).get("channel")) is int
