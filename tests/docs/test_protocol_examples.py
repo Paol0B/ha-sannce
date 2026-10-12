@@ -23,6 +23,7 @@ REQUIRED_IDS: set[str] = {
     "logon_reply_success",
     "logon_request_password_with_tab",
     "logoff_request",
+    "heartbeat_request",
 }
 
 
