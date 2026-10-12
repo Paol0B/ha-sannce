@@ -16,7 +16,10 @@ ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
 HEX_PATTERN = re.compile(r"^([0-9a-f]{2})+$")
 EVIDENCE_PATTERN = re.compile(r"^(lib[A-Za-z0-9_]+\.so:.+@0x[0-9a-f]+|java:[^:]+:\d+)$")
 
-REQUIRED_IDS: set[str] = set()
+REQUIRED_IDS: set[str] = {
+    "framing_parameter_get_request",
+    "framing_two_messages_one_read",
+}
 
 
 def load_examples() -> list[dict]:
