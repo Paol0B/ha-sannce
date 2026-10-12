@@ -36,6 +36,12 @@ REQUIRED_IDS: set[str] = {
     "talk_stop_request",
     "discovery_seek_request",
     "discovery_reply",
+    "http_device_info_reply",
+    "http_capabilities_reply",
+    "http_whitelight_get_reply",
+    "http_whitelight_set_manual_on",
+    "http_light_mode_set_smart",
+    "http_motion_detection_get_reply",
 }
 
 
@@ -77,3 +83,12 @@ def test_example_shape(example):
 @pytest.mark.parametrize("example_id", example_ids())
 def test_example_is_referenced_in_doc(example_id):
     assert f"[example: {example_id}]" in PROTOCOL.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "example",
+    [ex for ex in load_examples() if ex["transport"] == "http" and "/channels/" in ex["text"]],
+    ids=lambda ex: ex["id"],
+)
+def test_http_channel_examples_state_channel(example):
+    assert isinstance(example["fields"].get("channel"), int)
