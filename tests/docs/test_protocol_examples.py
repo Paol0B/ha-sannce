@@ -111,3 +111,22 @@ CHECKLIST = DOCS / "hardware-checklist.md"
 )
 def test_unverified_example_has_hardware_check(example_id):
     assert f"`{example_id}`" in CHECKLIST.read_text(encoding="utf-8")
+
+
+def open_questions() -> list[str]:
+    text = PROTOCOL.read_text(encoding="utf-8")
+    section = text.split("\n## Open questions\n", 1)[1].split("\n## ", 1)[0]
+    return [line[2:] for line in section.splitlines() if line.startswith("- ")]
+
+
+def test_open_questions_have_hardware_checks():
+    questions = open_questions()
+    checklist = CHECKLIST.read_text(encoding="utf-8")
+    assert questions
+    assert not [q for q in questions if q not in checklist]
+
+
+def test_status_summary_total_row_matches_data():
+    statuses = [ex["status"] for ex in load_examples()]
+    row = f"| total | {statuses.count('static')} | {statuses.count('inferred')} | {len(open_questions())} |"
+    assert row in PROTOCOL.read_text(encoding="utf-8")
