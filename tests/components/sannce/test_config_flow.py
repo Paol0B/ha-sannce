@@ -938,6 +938,22 @@ async def test_dhcp_for_a_camera_added_by_address_aborts(
     mock_find_camera.assert_not_awaited()
 
 
+async def test_dhcp_leaves_an_entry_without_a_unique_id_alone(
+    hass: HomeAssistant, mock_find_camera: AsyncMock
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=USER_INPUT | DEFAULT_PORTS | {CONF_MAC: MAC}
+    )
+    entry.add_to_hass(hass)
+
+    result = await start_dhcp(hass, ip=NEW_HOST)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == HOST
+    mock_find_camera.assert_not_awaited()
+
+
 async def test_dhcp_finds_a_known_serial_at_a_new_address(
     hass: HomeAssistant,
     mock_find_camera: AsyncMock,

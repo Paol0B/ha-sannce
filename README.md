@@ -203,6 +203,10 @@ When you report a problem, attach the diagnostics file from the device page. It 
 2. In the entry's menu, pick Delete. Home Assistant closes the camera sessions and removes the device and its entities.
 3. To remove the code too, remove SANNCE in HACS, or delete `<config>/custom_components/sannce` for a manual install. Then restart Home Assistant.
 
+## Quality scale
+
+The integration meets the Home Assistant integration quality scale up to Platinum, except two rules that need publication: brands and dependency-transparency. Home Assistant grades only core integrations, so there is no official badge. [custom_components/sannce/quality_scale.yaml](custom_components/sannce/quality_scale.yaml) gives the status of every rule.
+
 ## Live push-to-talk
 
 The speaker plays audio that Home Assistant produces. It does not carry your voice live. Live push-to-talk needs three more pieces, and none is verified on this camera.
@@ -261,6 +265,8 @@ Run the tests from the repository root.
 ```
 
 The Home Assistant pytest plugin blocks sockets, so the library tests run without it.
+
+`scripts/quality.sh` runs mypy, the unit tests with at least 95 % line coverage per module, and hassfest's quality scale check. Hassfest checks `quality_scale.yaml` only for core integrations, so the script copies the integration into the hassfest image as a core integration that declares Platinum. It passes when hassfest reports only brands and dependency-transparency. It needs Docker.
 
 To try the library alone against a camera, run `python -m sannce_aio probe HOST --pass PASSWORD` after the install above. It switches the white light on and back unless you add `--no-light`.
 

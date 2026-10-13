@@ -8,6 +8,8 @@ from homeassistant.components.media_player import (
     ATTR_MEDIA_CONTENT_TYPE,
     DOMAIN as MP_DOMAIN,
     SERVICE_PLAY_MEDIA,
+    BrowseMedia,
+    MediaClass,
     MediaPlayerEntityFeature,
     MediaPlayerState,
     MediaType,
@@ -26,6 +28,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
 from custom_components.sannce import audio, lib, media_player
 from custom_components.sannce.const import DOMAIN
@@ -295,3 +298,36 @@ async def test_no_speaker_without_the_talk_cap(
 
     assert speaker_id(entity_registry, identified_entry) is None
     assert hass.states.async_entity_ids(MP_DOMAIN) == []
+
+
+def media(content_type: str) -> BrowseMedia:
+    return BrowseMedia(
+        media_class=MediaClass.MUSIC,
+        media_content_id=f"media-source://media_source/local/clip.{content_type}",
+        media_content_type=content_type,
+        title="clip",
+        can_play=True,
+        can_expand=False,
+    )
+
+
+async def test_browsing_lists_only_audio(
+    hass: HomeAssistant,
+    speaker: str,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    browse = AsyncMock(return_value=media("audio/mpeg"))
+    client = await hass_ws_client(hass)
+
+    with patch.object(media_player.media_source, "async_browse_media", browse):
+        await client.send_json_auto_id(
+            {"type": "media_player/browse_media", "entity_id": speaker}
+        )
+        response = await client.receive_json()
+
+    assert response["success"]
+    assert response["result"]["title"] == "clip"
+    assert browse.await_args.args == (hass, None)
+    keep = browse.await_args.kwargs["content_filter"]
+    assert keep(media("audio/mpeg")) is True
+    assert keep(media("video/mp4")) is False

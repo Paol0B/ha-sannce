@@ -1,5 +1,6 @@
 import asyncio
 import math
+import struct
 from collections.abc import AsyncIterable
 from unittest.mock import patch
 
@@ -19,6 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.sannce import lib
 from custom_components.sannce.audio import SAMPLE_RATE, SAMPLE_WIDTH
 from custom_components.sannce.const import DOMAIN
 from custom_components.sannce.siren import (
@@ -208,3 +210,61 @@ async def test_no_siren_without_the_talk_cap(
 
     assert siren_id(entity_registry, identified_entry) is None
     assert hass.states.async_entity_ids(SIREN_DOMAIN) == []
+
+
+def test_tone_is_little_endian_pcm() -> None:
+    _tone_cycle.cache_clear()
+    cycle = _tone_cycle("alarm")
+    peak = int(32767 * 0.6)
+
+    samples = struct.unpack(f"<{len(cycle) // SAMPLE_WIDTH}h", cycle)
+
+    assert samples[:4] == tuple(
+        int(peak * math.sin(2 * math.pi * 800.0 * n / SAMPLE_RATE)) for n in range(4)
+    )
+    # the second segment, 0.25 s in, plays 1000 Hz
+    assert samples[2001] == int(peak * math.sin(2 * math.pi * 1000.0 * 2001 / 8000))
+
+
+async def test_removing_the_siren_while_it_plays_stops_the_tone(
+    hass: HomeAssistant,
+    siren: str,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    release = asyncio.Event()
+
+    async def hold(pcm: AsyncIterable[bytes]) -> None:
+        mock_camera.talk_active = True
+        try:
+            async for chunk in pcm:
+                mock_camera.played.append(chunk)
+                await release.wait()
+        finally:
+            mock_camera.talk_active = False
+
+    mock_camera.play_audio.side_effect = hold
+    await turn_on(hass, siren, duration=5)
+    assert mock_camera.talk_active is True
+
+    entity_registry.async_remove(siren)
+    await hass.async_block_till_done()
+
+    assert mock_camera.talk_active is False
+    assert hass.states.get(siren) is None
+    release.set()
+
+
+async def test_a_failed_tone_turns_the_siren_off_and_logs_once(
+    hass: HomeAssistant,
+    siren: str,
+    mock_camera: FakeSannceCamera,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_camera.play_audio.side_effect = lib.TalkBusyError("talk is already active")
+
+    await turn_on(hass, siren, duration=1)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert hass.states.get(siren).state == STATE_OFF
+    assert caplog.text.count("siren playback failed: talk is already active") == 1

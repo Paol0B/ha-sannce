@@ -1,9 +1,8 @@
-import array
 import asyncio
 import functools
 import logging
 import math
-import sys
+import struct
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -43,13 +42,12 @@ def _tone_cycle(tone: str) -> bytes:
     freqs, segment = _TONES[tone]
     peak = int(32767 * _AMPLITUDE)
     seg_samples = max(1, int(SAMPLE_RATE * segment))
-    cycle = array.array("h", bytes(seg_samples * len(freqs) * SAMPLE_WIDTH))
-    for n in range(len(cycle)):
-        freq = freqs[n // seg_samples]
-        cycle[n] = int(peak * math.sin(2 * math.pi * freq * n / SAMPLE_RATE))
-    if sys.byteorder == "big":
-        cycle.byteswap()
-    return cycle.tobytes()
+    count = seg_samples * len(freqs)
+    samples = (
+        int(peak * math.sin(2 * math.pi * freqs[n // seg_samples] * n / SAMPLE_RATE))
+        for n in range(count)
+    )
+    return struct.pack(f"<{count}h", *samples)
 
 
 async def _tone_chunks(duration: int, tone: str) -> AsyncIterator[bytes]:
