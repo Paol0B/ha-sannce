@@ -26,6 +26,15 @@ HACS_KEYS = {
 VENDORED = "custom_components.sannce.sannce_aio"
 # IEEE MA-L assignments to Tiandy Technologies (standards-oui.ieee.org/oui/oui.txt)
 TIANDY_PREFIXES = ("3CDA6D", "BC516C", "E4E66C")
+DOC_SECTIONS = {
+    "Supported devices",
+    "Data updates",
+    "Use cases",
+    "Automation examples",
+    "Known limits",
+    "Troubleshooting",
+    "Remove",
+}
 
 
 def test_manifest_describes_a_local_push_device() -> None:
@@ -81,6 +90,21 @@ def test_hacs_minimum_home_assistant_is_a_calendar_version() -> None:
 
 def test_root_readme_exists_for_hacs_to_show() -> None:
     assert (ROOT / "README.md").read_text().strip()
+
+
+def test_readme_has_the_sections_the_quality_scale_asks_for() -> None:
+    readme = (ROOT / "README.md").read_text()
+    headings = {line[3:] for line in readme.splitlines() if line.startswith("## ")}
+
+    assert DOC_SECTIONS <= headings
+
+
+@pytest.mark.parametrize("doc", ["README.md", "docs/hardware-checklist.md"])
+def test_docs_list_the_dhcp_prefixes(doc: str) -> None:
+    text = (ROOT / doc).read_text()
+
+    for prefix in TIANDY_PREFIXES:
+        assert f"`{prefix[:2]}:{prefix[2:4]}:{prefix[4:]}`" in text
 
 
 def test_lib_exports_come_from_the_vendored_library() -> None:
