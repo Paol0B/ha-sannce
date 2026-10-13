@@ -1,4 +1,7 @@
+from collections.abc import Awaitable
+
 from homeassistant.const import CONF_MAC, CONF_MODEL
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import (
     CONNECTION_NETWORK_MAC,
     DeviceInfo,
@@ -7,6 +10,7 @@ from homeassistant.helpers.device_registry import (
 from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from . import lib
 from .const import CONF_SERIAL, DOMAIN, MANUFACTURER
 from .coordinator import SannceCoordinator
 
@@ -43,3 +47,11 @@ class SannceSettingsEntity(SannceEntity):
     @property
     def available(self) -> bool:
         return super().available and self.coordinator.last_update_success
+
+    async def _async_command(self, command: Awaitable[None]) -> None:
+        try:
+            await command
+        except lib.SannceError as err:
+            raise HomeAssistantError(f"Cannot update {self.entity_id}: {err}") from err
+        # not async_request_refresh: its 10 s cooldown would leave stale state
+        await self.coordinator.async_refresh()

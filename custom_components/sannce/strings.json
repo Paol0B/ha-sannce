@@ -61,6 +61,21 @@
       "sub": {
         "name": "Sub stream"
       }
+    },
+    "light": {
+      "floodlight": {
+        "name": "Floodlight"
+      }
+    },
+    "select": {
+      "light_mode": {
+        "name": "Light mode",
+        "state": {
+          "color": "Color",
+          "infrared": "Infrared",
+          "smart": "Smart"
+        }
+      }
     }
   }
 }
