@@ -24,6 +24,8 @@ HACS_KEYS = {
     "zip_release",
 }
 VENDORED = "custom_components.sannce.sannce_aio"
+# IEEE MA-L assignments to Tiandy Technologies (standards-oui.ieee.org/oui/oui.txt)
+TIANDY_PREFIXES = ("3CDA6D", "BC516C", "E4E66C")
 
 
 def test_manifest_describes_a_local_push_device() -> None:
@@ -44,6 +46,13 @@ def test_manifest_depends_on_the_audio_components() -> None:
 
 def test_manifest_depends_on_stream_for_camera_snapshots() -> None:
     assert "stream" in MANIFEST["dependencies"]
+
+
+def test_manifest_discovers_tiandy_cameras_and_known_devices() -> None:
+    assert MANIFEST["dhcp"] == [
+        {"registered_devices": True},
+        *({"macaddress": f"{prefix}*"} for prefix in TIANDY_PREFIXES),
+    ]
 
 
 @pytest.mark.parametrize("key", ["documentation", "issue_tracker"])

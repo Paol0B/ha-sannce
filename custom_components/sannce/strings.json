@@ -1,5 +1,6 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "Add a SANNCE camera",
@@ -51,6 +52,18 @@
           "rtsp_port": "Used for the video streams."
         }
       },
+      "dhcp_confirm": {
+        "title": "Add the discovered camera",
+        "description": "Home Assistant found {name} on your network. Enter its login.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "Login name of the camera.",
+          "password": "Password of the camera login."
+        }
+      },
       "reauth_confirm": {
         "title": "Sign in again",
         "description": "Login to {host} failed. Enter the new password for {username}.",
@@ -71,6 +84,7 @@
     },
     "abort": {
       "already_configured": "This camera is already configured.",
+      "not_sannce_camera": "The device does not answer as a SANNCE camera.",
       "reauth_successful": "Password updated.",
       "wrong_camera": "This address belongs to another camera. Add that camera as a new device instead."
     }

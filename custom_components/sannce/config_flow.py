@@ -14,6 +14,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from . import lib
 from .const import (
@@ -38,6 +39,12 @@ USER_SCHEMA = vol.Schema(
         vol.Optional(CONF_NVS_PORT, default=DEFAULT_NVS_PORT): cv.port,
         vol.Optional(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): cv.port,
         vol.Optional(CONF_RTSP_PORT, default=DEFAULT_RTSP_PORT): cv.port,
+    }
+)
+LOGIN_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
+        vol.Required(CONF_PASSWORD): str,
     }
 )
 REAUTH_SCHEMA = vol.Schema({vol.Required(CONF_PASSWORD): str})
@@ -111,6 +118,14 @@ def _label(camera: lib.DiscoveredCamera) -> str:
     return f"{camera.model or 'SANNCE'} ({camera.ip})"
 
 
+def _settings(camera: lib.DiscoveredCamera) -> dict[str, Any]:
+    return {
+        CONF_HOST: camera.ip,
+        CONF_NVS_PORT: camera.server_port or DEFAULT_NVS_PORT,
+        CONF_HTTP_PORT: camera.http_port or DEFAULT_HTTP_PORT,
+    }
+
+
 class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -143,15 +158,7 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         if user_input is not None:
             camera = self._found[user_input[CONF_HOST]]
-            return self._show_user_form(
-                self._input
-                | {
-                    CONF_HOST: camera.ip,
-                    CONF_NVS_PORT: camera.server_port or DEFAULT_NVS_PORT,
-                    CONF_HTTP_PORT: camera.http_port or DEFAULT_HTTP_PORT,
-                },
-                {},
-            )
+            return self._show_user_form(self._input | _settings(camera), {})
 
         known = self._async_current_ids() | {
             entry.data[CONF_HOST] for entry in self._async_current_entries()
@@ -179,8 +186,47 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
         )
 
-    async def async_step_reauth(
-        self, entry_data: Mapping[str, Any]
+    async def async_step_dhcp(
+        self, discovery_info: DhcpServiceInfo
+    ) -> ConfigFlowResult:
+        host = discovery_info.ip
+        mac = format_mac(discovery_info.macaddress)
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.data.get(CONF_MAC) and format_mac(entry.data[CONF_MAC]) == mac:
+                await self.async_set_unique_id(entry.unique_id)
+                self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        self._async_abort_entries_match({CONF_HOST: host})
+        camera = await _async_find(host)
+        if camera is None:
+            return self.async_abort(reason="not_sannce_camera")
+        await self.async_set_unique_id(camera.serial or host)
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        self._found = {host: camera}
+        self._input = _settings(camera) | {CONF_RTSP_PORT: DEFAULT_RTSP_PORT}
+        self.context["title_placeholders"] = {"name": _label(camera)}
+        return await self.async_step_dhcp_confirm()
+
+    async def async_step_dhcp_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = self._input | user_input
+            try:
+                info = await _async_probe(self.hass, data)
+            except _ProbeError as err:
+                errors["base"] = str(err)
+            else:
+                return await self._async_create_entry(data, info)
+        camera = self._found[self._input[CONF_HOST]]
+        return self.async_show_form(
+            step_id="dhcp_confirm",
+            data_schema=self.add_suggested_values_to_schema(LOGIN_SCHEMA, user_input),
+            description_placeholders={"name": _label(camera)},
+            errors=errors,
+        )
+
+    async def async_step_reauth(        self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
         return await self.async_step_reauth_confirm()
 

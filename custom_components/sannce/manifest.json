@@ -4,6 +4,20 @@
   "codeowners": ["@bertinetti"],
   "config_flow": true,
   "dependencies": ["ffmpeg", "media_source", "stream"],
+  "dhcp": [
+    {
+      "registered_devices": true
+    },
+    {
+      "macaddress": "3CDA6D*"
+    },
+    {
+      "macaddress": "BC516C*"
+    },
+    {
+      "macaddress": "E4E66C*"
+    }
+  ],
   "documentation": "https://github.com/bertinetti/ha-sannce",
   "integration_type": "device",
   "iot_class": "local_push",
