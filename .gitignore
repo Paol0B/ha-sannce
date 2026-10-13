@@ -1,5 +1,6 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.mypy_cache/
 bench/ha-config/
 bench/media/

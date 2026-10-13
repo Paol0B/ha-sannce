@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterable, AsyncIterator, Awaitable
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable
 from contextlib import aclosing, suppress
 from typing import TYPE_CHECKING
 
@@ -41,7 +41,7 @@ async def _resolve(hass: HomeAssistant, media: str) -> str:
     return async_process_play_media_url(hass, media)
 
 
-async def _ffmpeg_pcm(hass: HomeAssistant, media_id: str) -> AsyncIterator[bytes]:
+async def _ffmpeg_pcm(hass: HomeAssistant, media_id: str) -> AsyncGenerator[bytes]:
     # lazy import: haffmpeg is a HA core dependency, absent from the unit test env
     from homeassistant.components import ffmpeg
 

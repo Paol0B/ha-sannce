@@ -2,7 +2,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-import voluptuous as vol
+import probatio
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
 from homeassistant.const import (
     CONF_HOST,
@@ -31,31 +31,31 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-USER_SCHEMA = vol.Schema(
+USER_SCHEMA = probatio.Schema(
     {
-        vol.Optional(CONF_HOST, default=""): str,
-        vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
-        vol.Optional(CONF_PASSWORD, default=""): str,
-        vol.Optional(CONF_NVS_PORT, default=DEFAULT_NVS_PORT): cv.port,
-        vol.Optional(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): cv.port,
-        vol.Optional(CONF_RTSP_PORT, default=DEFAULT_RTSP_PORT): cv.port,
+        probatio.Optional(CONF_HOST, default=""): str,
+        probatio.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
+        probatio.Optional(CONF_PASSWORD, default=""): str,
+        probatio.Optional(CONF_NVS_PORT, default=DEFAULT_NVS_PORT): cv.port,
+        probatio.Optional(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): cv.port,
+        probatio.Optional(CONF_RTSP_PORT, default=DEFAULT_RTSP_PORT): cv.port,
     }
 )
-LOGIN_SCHEMA = vol.Schema(
+LOGIN_SCHEMA = probatio.Schema(
     {
-        vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
-        vol.Required(CONF_PASSWORD): str,
+        probatio.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
+        probatio.Required(CONF_PASSWORD): str,
     }
 )
-REAUTH_SCHEMA = vol.Schema({vol.Required(CONF_PASSWORD): str})
-RECONFIGURE_SCHEMA = vol.Schema(
+REAUTH_SCHEMA = probatio.Schema({probatio.Required(CONF_PASSWORD): str})
+RECONFIGURE_SCHEMA = probatio.Schema(
     {
-        vol.Required(CONF_HOST): str,
-        vol.Required(CONF_USERNAME): str,
-        vol.Optional(CONF_PASSWORD, default=""): str,
-        vol.Required(CONF_NVS_PORT, default=DEFAULT_NVS_PORT): cv.port,
-        vol.Required(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): cv.port,
-        vol.Required(CONF_RTSP_PORT, default=DEFAULT_RTSP_PORT): cv.port,
+        probatio.Required(CONF_HOST): str,
+        probatio.Required(CONF_USERNAME): str,
+        probatio.Optional(CONF_PASSWORD, default=""): str,
+        probatio.Required(CONF_NVS_PORT, default=DEFAULT_NVS_PORT): cv.port,
+        probatio.Required(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): cv.port,
+        probatio.Required(CONF_RTSP_PORT, default=DEFAULT_RTSP_PORT): cv.port,
     }
 )
 
@@ -183,9 +183,9 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
             return self._show_user_form(self._input, {"base": "no_cameras_found"})
         return self.async_show_form(
             step_id="pick_camera",
-            data_schema=vol.Schema(
+            data_schema=probatio.Schema(
                 {
-                    vol.Required(CONF_HOST): vol.In(
+                    probatio.Required(CONF_HOST): probatio.In(
                         {ip: _label(camera) for ip, camera in self._found.items()}
                     )
                 }
