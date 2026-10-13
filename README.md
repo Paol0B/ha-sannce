@@ -16,14 +16,14 @@ Not verified on hardware. The protocol comes from static analysis of the SANNCE 
 - SANNCE wired cameras that pair with the SANNCE Life app. They are Tiandy OEM devices and speak Tiandy's private protocol on port 3000.
 - The reference model is the I91FW. No camera has run this code yet, see Status.
 - Cameras for the SANNCE HOME app run a different platform. They are not supported.
-- One camera per entry. NVRs are not supported: the integration reads channel 1 only.
+- One camera per entry. NVRs are not supported: the integration uses channel 1 for settings and video.
 
 ## Requirements
 
 - Home Assistant 2026.10 or newer. Older versions are untested.
 - A camera on the same LAN, activated, with an admin password.
 - TCP from Home Assistant to the camera: port 3000 (events, speaker), 80 (settings) and 554 (video).
-- A fixed camera address works best. The integration follows a new address only when Home Assistant sees the camera's DHCP request and the entry can tell it is the same camera. See Discovery.
+- A fixed camera address works best. The integration can follow a new address in one case only. Home Assistant must see the camera's DHCP request. The entry must also match the camera's MAC address or serial number. See Discovery.
 - The `ffmpeg` binary, for the speaker only. The siren builds its tone in Python. The official container image has ffmpeg.
 
 ## Install
@@ -67,7 +67,7 @@ After the login, the integration runs a short LAN search for the address you typ
 
 Home Assistant also finds cameras by itself. Its DHCP watcher reports devices whose MAC address starts with a prefix the IEEE registry assigns to Tiandy: `3C:DA:6D`, `BC:51:6C` or `E4:E6:6C`. It also reports a camera already in Home Assistant, whatever its prefix, when the entry stores its MAC address.
 
-The integration runs the short LAN search for the address. A camera that answers shows up under Discovered with its model. One that does not answer shows up too, named after its address. The login decides: a device that is not a SANNCE camera fails it. Confirm the camera and enter its login.
+The integration runs the short LAN search for the address. A camera that answers shows up under Discovered with its model. One that does not answer shows up too, as `SANNCE (<ip>)`. The login decides: a device that is not a SANNCE camera fails it. Confirm the camera and enter its login.
 
 When a known camera gets a new address over DHCP, the integration updates the entry and reloads it. It does so only when one of these proves it is the same camera:
 
@@ -78,7 +78,7 @@ An address alone never updates an entry. The integration never moves an entry to
 
 ### Reconfigure
 
-To change the address, the login or the ports, open the entry's menu and pick Reconfigure. Leave the password empty to keep the current one. The integration checks the new settings with the camera before it saves them. It refuses an address that another entry uses. It also refuses an address that answers with another camera's serial number or MAC address.
+To change the address, the login or the ports, open the entry's menu and pick Reconfigure. Leave the password empty to keep the current one. The integration checks the new settings with the camera before it saves them. It refuses an address that another entry uses. It also refuses an address that answers with another camera's serial number or MAC address. A camera at a new address may report no serial number or MAC address to compare. Then nothing proves it is the same camera, so the entry drops the serial number and MAC address it stored.
 
 ## Entities
 
@@ -108,11 +108,11 @@ A dropped camera connection makes every entity unavailable, not off, until it re
 - Get a phone notification when a vehicle stops at the gate.
 - Light the yard and speak a warning when someone walks up at night.
 - Sound the siren from an alarm automation.
-- Turn person and vehicle detection off while you are home, and on when you leave.
+- Turn person and vehicle detection off while you are home, and on when you leave. The camera may lock these switches, see Known limits.
 
 ## Automation examples
 
-The entity IDs below assume the camera is named I91FW. Check yours on the device page.
+The entity IDs below assume the camera is named I91FW. Check yours on the device page. `notify.notify` and `tts.home_assistant_cloud` are placeholders: replace them with your own notify action and TTS entity.
 
 Notify on a vehicle:
 
@@ -129,7 +129,7 @@ automation:
           message: A vehicle is at the gate.
 ```
 
-Light the yard and speak a warning at night:
+Light the yard and speak a warning at night, then hand the lamp back to the camera after two minutes:
 
 ```yaml
 automation:
@@ -152,6 +152,10 @@ automation:
         data:
           media_player_entity_id: media_player.i91fw_speaker
           message: You are on camera.
+      - delay: "00:02:00"
+      - action: light.turn_off
+        target:
+          entity_id: light.i91fw_floodlight
 ```
 
 Sound the siren for 30 seconds:
@@ -267,7 +271,7 @@ Run the tests from the repository root.
 
 The Home Assistant pytest plugin blocks sockets, so the library tests run without it.
 
-`scripts/quality.sh` runs mypy, the unit tests with at least 95 % line coverage per module, and hassfest's quality scale check. Hassfest checks `quality_scale.yaml` only for core integrations, so the script copies the integration into the hassfest image as a core integration that declares Platinum. It passes when hassfest reports only brands and dependency-transparency, and `quality_scale.yaml` matches its tests. It needs Docker.
+`scripts/quality.sh` runs mypy, mypy again on the library as Python 3.11, the unit tests with at least 95 % line coverage per module, and hassfest's quality scale check. Hassfest checks `quality_scale.yaml` only for core integrations, so the script copies the integration into the hassfest image as a core integration that declares Platinum. It passes when hassfest reports only brands and dependency-transparency, and `quality_scale.yaml` matches its tests. It needs Docker.
 
 To try the library alone against a camera, run `python -m sannce_aio probe HOST --pass PASSWORD` after the install above. It switches the white light on and back unless you add `--no-light`.
 
