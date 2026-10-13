@@ -143,3 +143,7 @@ Run the tests from the repository root.
 The Home Assistant pytest plugin blocks sockets, so the library tests run without it.
 
 To try the library alone against a camera, run `python -m sannce_aio probe HOST --pass PASSWORD` after the install above. It switches the white light on and back unless you add `--no-light`.
+
+## Bench
+
+`scripts/bench.sh up` starts Home Assistant 2026.10.1 and a simulated camera in Docker, with this integration loaded. `scripts/bench.sh test` starts them fresh, then runs the end-to-end suite and hassfest. See [bench/README.md](bench/README.md).
