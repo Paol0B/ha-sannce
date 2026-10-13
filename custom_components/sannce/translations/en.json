@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a SANNCE camera",
+        "description": "Enter the camera address and login. Leave the host empty to search the network.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password",
+          "nvs_port": "Private protocol port",
+          "http_port": "HTTP port",
+          "rtsp_port": "RTSP port"
+        }
+      },
+      "pick_camera": {
+        "title": "Choose a camera",
+        "description": "Pick the camera to add. You enter its login next.",
+        "data": {
+          "host": "Camera"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "Login to {host} failed. Enter the new password for {username}.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the camera.",
+      "invalid_auth": "Login failed. Check the username and password.",
+      "invalid_host": "Enter a host name or IP address only. It cannot contain / ? # or @.",
+      "no_cameras_found": "No cameras found on the network.",
+      "unknown": "Unexpected error. See the log for details."
+    },
+    "abort": {
+      "already_configured": "This camera is already configured."
+    }
+  }
+}
