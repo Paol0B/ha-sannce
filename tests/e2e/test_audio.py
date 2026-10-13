@@ -61,6 +61,10 @@ async def test_the_siren_plays_its_tone_for_the_duration(
 async def test_turning_the_siren_off_stops_the_sound(hass, camera, entry):
     siren = entry.entity_ids["siren"]
     await hass.call("siren", "turn_on", siren, tone="alarm", duration=10)
+    # until this talk session starts, the camera still holds the last recording
+    await wait_for(
+        camera.state, lambda state: state["talking"], 5, "waiting for the siren"
+    )
     await wait_for(
         lambda: recorded_seconds(camera),
         lambda seconds: seconds >= 1,

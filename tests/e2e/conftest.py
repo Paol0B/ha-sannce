@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from typing import NoReturn
 
 import aiohttp
 import pytest
@@ -12,6 +13,11 @@ from . import add_by_ip, clear
 
 E2E_DIR = Path(__file__).parent
 NOT_RUNNING = "bench is not running: scripts/bench.sh up"
+
+
+def not_running(exc: BaseException) -> NoReturn:
+    cause = str(exc)
+    pytest.exit(f"{NOT_RUNNING} ({cause})" if cause else NOT_RUNNING, returncode=1)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -57,8 +63,8 @@ async def camera(http):
     control = CameraControl(http)
     try:
         await asyncio.wait_for(control.state(), 3)
-    except (aiohttp.ClientError, TimeoutError, BenchError):
-        pytest.exit(NOT_RUNNING, returncode=1)
+    except (aiohttp.ClientError, TimeoutError, BenchError) as exc:
+        not_running(exc)
     return control
 
 
@@ -67,8 +73,8 @@ async def hass(http, camera):
     client = HassClient(http)
     try:
         await client.sign_in(timeout=5)
-    except (aiohttp.ClientError, BenchError):
-        pytest.exit(NOT_RUNNING, returncode=1)
+    except (aiohttp.ClientError, BenchError) as exc:
+        not_running(exc)
     yield client
     await client.close()
 
@@ -76,5 +82,7 @@ async def hass(http, camera):
 @pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def entry(hass, camera):
     await clear(hass, camera)
-    yield await add_by_ip(hass, camera)
-    await clear(hass, camera)
+    try:
+        yield await add_by_ip(hass, camera)
+    finally:
+        await clear(hass, camera)

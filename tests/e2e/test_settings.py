@@ -13,9 +13,14 @@ async def test_the_light_reaches_the_camera(hass, camera, entry):
     await hass.wait_state(light, "off", timeout=5)
 
 
-@pytest.mark.parametrize("mode", ["color", "smart", "infrared"])
-async def test_the_light_mode_reaches_the_camera(hass, camera, entry, mode):
+@pytest.mark.parametrize(
+    ("start", "mode"),
+    [("infrared", "color"), ("color", "smart"), ("smart", "infrared")],
+)
+async def test_the_light_mode_reaches_the_camera(hass, camera, entry, start, mode):
     select = entry.entity_ids["light_mode"]
+    await hass.call("select", "select_option", select, option=start)
+    await hass.wait_state(select, start, timeout=5)
 
     await hass.call("select", "select_option", select, option=mode)
 

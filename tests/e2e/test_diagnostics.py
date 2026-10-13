@@ -12,8 +12,10 @@ REDACTED_KEYS = ("host", "username", "password", "serial", "mac")
 @pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def found(hass, camera):
     await clear(hass, camera)
-    yield await add_by_search(hass, camera)
-    await clear(hass, camera)
+    try:
+        yield await add_by_search(hass, camera)
+    finally:
+        await clear(hass, camera)
 
 
 async def test_diagnostics_redact_the_login_and_the_camera_identity(
