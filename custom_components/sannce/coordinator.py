@@ -3,7 +3,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -81,13 +81,24 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
 
     @callback
     def _handle_availability(self, available: bool) -> None:
+        was_connected = self.connected
         self.connected = available
         self.async_update_listeners()
-        # setup runs the first poll itself
-        if available and self.data is not None:
-            self.config_entry.async_create_background_task(
-                self.hass, self.async_request_refresh(), "sannce reconnect refresh"
-            )
+        # setup runs the first poll itself, and unload closes the camera on purpose
+        if (
+            available == was_connected
+            or self.data is None
+            or self.config_entry.state is not ConfigEntryState.LOADED
+        ):
+            return
+        host = self.config_entry.data[CONF_HOST]
+        if not available:
+            _LOGGER.info("Camera %s is unavailable", host)
+            return
+        _LOGGER.info("Camera %s is back online", host)
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_request_refresh(), "sannce reconnect refresh"
+        )
 
     @callback
     def _handle_login_failed(self, error: lib.AuthError) -> None:
