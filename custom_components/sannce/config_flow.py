@@ -118,6 +118,12 @@ def _label(camera: lib.DiscoveredCamera) -> str:
     return f"{camera.model or 'SANNCE'} ({camera.ip})"
 
 
+def _unanswered(host: str, mac: str) -> lib.DiscoveredCamera:
+    return lib.DiscoveredCamera(
+        ip=host, mac=mac, serial="", model="", http_port=0, server_port=0, channels=0
+    )
+
+
 def _settings(camera: lib.DiscoveredCamera) -> dict[str, Any]:
     return {
         CONF_HOST: camera.ip,
@@ -193,14 +199,15 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
         mac = format_mac(discovery_info.macaddress)
         for entry in self._async_current_entries(include_ignore=False):
             if entry.data.get(CONF_MAC) and format_mac(entry.data[CONF_MAC]) == mac:
-                await self.async_set_unique_id(entry.unique_id)
-                self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+                return await self._async_follow(entry, host)
         self._async_abort_entries_match({CONF_HOST: host})
-        camera = await _async_find(host)
-        if camera is None:
-            return self.async_abort(reason="not_sannce_camera")
+        camera = await _async_find(host) or _unanswered(host, mac)
+        if camera.serial:
+            for entry in self._async_current_entries(include_ignore=False):
+                if camera.serial in (entry.unique_id, entry.data.get(CONF_SERIAL)):
+                    return await self._async_follow(entry, host)
         await self.async_set_unique_id(camera.serial or host)
-        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        self._abort_if_unique_id_configured()
         self._found = {host: camera}
         self._input = _settings(camera) | {CONF_RTSP_PORT: DEFAULT_RTSP_PORT}
         self.context["title_placeholders"] = {"name": _label(camera)}
@@ -226,7 +233,8 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(        self, entry_data: Mapping[str, Any]
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
         return await self.async_step_reauth_confirm()
 
@@ -288,6 +296,14 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
+
+    async def _async_follow(self, entry: ConfigEntry, host: str) -> ConfigFlowResult:
+        others = self._async_current_entries(include_ignore=False)
+        if any(o is not entry and o.data.get(CONF_HOST) == host for o in others):
+            return self.async_abort(reason="already_configured")
+        await self.async_set_unique_id(entry.unique_id)
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        return self.async_abort(reason="already_configured")
 
     def _conflict(self, entry: ConfigEntry, identity: Mapping[str, str]) -> str | None:
         serial = identity.get(CONF_SERIAL)

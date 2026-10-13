@@ -8,6 +8,7 @@ import probatio
 import pytest
 from homeassistant.config_entries import (
     SOURCE_DHCP,
+    SOURCE_IGNORE,
     SOURCE_REAUTH,
     SOURCE_USER,
     ConfigEntryState,
@@ -853,13 +854,38 @@ async def test_dhcp_confirm_shows_a_failed_login(
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
-async def test_dhcp_ignores_a_device_that_is_not_a_camera(
-    hass: HomeAssistant, mock_find_camera: AsyncMock
+async def test_dhcp_offers_a_camera_that_does_not_answer_the_lookup(
+    hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
+    mock_camera: FakeSannceCamera,
+    mock_setup_entry: AsyncMock,
 ) -> None:
     result = await start_dhcp(hass)
 
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "not_sannce_camera"
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "dhcp_confirm"
+    assert result["description_placeholders"] == {"name": f"SANNCE ({HOST})"}
+
+    result = await submit(hass, result, LOGIN)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == HOST
+    assert result["result"].unique_id == HOST
+    assert result["data"] == USER_INPUT | DEFAULT_PORTS | {CONF_MAC: MAC.lower()}
+
+
+async def test_dhcp_lookup_failure_still_checks_the_login(
+    hass: HomeAssistant,
+    mock_camera: FakeSannceCamera,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    mock_camera.connect.side_effect = lib.ConnectError("offline")
+    result = await start_dhcp(hass)
+
+    result = await submit(hass, result, LOGIN)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
 
 
 async def test_dhcp_moves_a_known_camera_to_its_new_address(
@@ -929,6 +955,84 @@ async def test_dhcp_finds_a_known_serial_at_a_new_address(
     assert entry.state is ConfigEntryState.LOADED
 
 
+async def test_dhcp_keeps_a_stale_host_key_off_another_camera(
+    hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
+    mock_camera_class: MagicMock,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    entry = camera_entry(host=NEW_HOST, mac=MAC)
+    await setup_integration(hass, entry)
+    mock_find_camera.return_value = discovered(serial="", mac="00:00:5E:00:53:99")
+
+    result = await start_dhcp(hass, mac="00005e005399")
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.unique_id == HOST
+    assert entry.data[CONF_HOST] == NEW_HOST
+    assert mock_camera_class.call_count == 1
+
+
+async def test_dhcp_follows_the_serial_stored_in_a_host_keyed_entry(
+    hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=HOST,
+        data=USER_INPUT | DEFAULT_PORTS | {CONF_SERIAL: SERIAL},
+    )
+    await setup_integration(hass, entry)
+    mock_find_camera.return_value = discovered(ip=NEW_HOST)
+
+    result = await start_dhcp(hass, ip=NEW_HOST)
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == NEW_HOST
+    assert entry.state is ConfigEntryState.LOADED
+    assert hass.config_entries.async_entries(DOMAIN) == [entry]
+
+
+async def test_dhcp_does_not_move_a_camera_onto_a_host_in_use(
+    hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
+    mock_camera_class: MagicMock,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    moving = camera_entry(model="I91FW", serial=SERIAL, mac=MAC)
+    holder = camera_entry(host=NEW_HOST, serial="SN0000000002")
+    await setup_integration(hass, moving)
+    await setup_integration(hass, holder)
+
+    result = await start_dhcp(hass, ip=NEW_HOST)
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "already_configured"
+    assert moving.data[CONF_HOST] == HOST
+    assert holder.data[CONF_HOST] == NEW_HOST
+    mock_find_camera.assert_not_awaited()
+
+
+async def test_dhcp_leaves_an_ignored_camera_alone(
+    hass: HomeAssistant, mock_find_camera: AsyncMock
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN, source=SOURCE_IGNORE, unique_id=SERIAL, data={}
+    )
+    entry.add_to_hass(hass)
+    mock_find_camera.return_value = discovered(ip=NEW_HOST)
+
+    result = await start_dhcp(hass, ip=NEW_HOST)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data == {}
+
+
 async def test_a_second_dhcp_flow_for_the_camera_aborts(
     hass: HomeAssistant, mock_find_camera: AsyncMock
 ) -> None:
@@ -979,7 +1083,6 @@ def test_strings_cover_the_flow() -> None:
     }
     assert set(config["abort"]) == {
         "already_configured",
-        "not_sannce_camera",
         "reauth_successful",
         "wrong_camera",
     }

@@ -84,7 +84,6 @@
     },
     "abort": {
       "already_configured": "This camera is already configured.",
-      "not_sannce_camera": "The device does not answer as a SANNCE camera.",
       "reauth_successful": "Password updated.",
       "wrong_camera": "This address belongs to another camera. Add that camera as a new device instead."
     }
