@@ -6,6 +6,7 @@ The bench runs the integration in a real Home Assistant against a simulated came
 
 - Linux with Docker and Compose 2. Tested with Docker 29.1.3 and Compose 2.40.3.
 - The `.venv` from [Development](../README.md#development). `scripts/bench.sh` runs its Python.
+- rsync. `scripts/vendor-lib.sh` copies the library into the integration with it.
 - About 4.5 GB of disk for the images. Home Assistant alone is 3.5 GB.
 - Nothing else on `127.0.0.1:8123` or on the Docker subnet `172.31.250.0/24`.
 
@@ -17,7 +18,7 @@ The bench runs the integration in a real Home Assistant against a simulated came
 | `scripts/bench.sh down` | Stop the stack. Keep the Home Assistant state. |
 | `scripts/bench.sh reset` | Stop, wipe `bench/ha-config/`, start fresh. |
 | `scripts/bench.sh test` | Reset, run the end-to-end suite, then hassfest. |
-| `scripts/bench.sh event KIND [on\|off]` | Push an event: `motion`, `vehicle`, `intrusion`, `line`, `tamper` or `video_loss`. |
+| `scripts/bench.sh event KIND [on\|off]` | Push an event: `motion`, `vehicle`, `intrusion`, `line`, `tamper` or `video_loss`. The default is `on`. |
 | `scripts/bench.sh audio FILE` | Save the last talk session as WAV. |
 | `scripts/bench.sh hassfest` | Validate `custom_components/sannce` with hassfest. |
 
@@ -28,7 +29,7 @@ The bench runs the integration in a real Home Assistant against a simulated came
 
 | Service | Address | Login |
 |---|---|---|
-| Home Assistant | http://127.0.0.1:8123, and 172.31.250.20 on the bench network | `dev` / `sannce-bench` |
+| Home Assistant | http://127.0.0.1:8123, and http://172.31.250.20:8123 on the bench network | `dev` / `sannce-bench` |
 | Camera | 172.31.250.10: private protocol 3000, HTTP 80, RTSP 554, LAN search UDP 3000 and 4000 | `admin` / `admin123` |
 | Control API | http://172.31.250.10:8099 | none |
 
@@ -38,24 +39,13 @@ The bench runs the integration in a real Home Assistant against a simulated came
 
 ## Control API
 
-| Request | Effect |
-|---|---|
-| `GET /state` | light, light mode, detection flags, client count, talking, user and password |
-| `POST /event {"kind", "active"}` | push an event |
-| `POST /settings {"light", "light_mode", "detection"}` | change settings, as the vendor app would. `light` false means auto |
-| `POST /password {"password"}` | change the password that new logins must use. Open sessions stay |
-| `POST /drop {"seconds"}` | close every session and refuse connections for that long, like a reboot |
-| `POST /talk-busy {"busy"}` | refuse talk requests |
-| `GET /audio.wav` | the current or last talk session, 8 kHz mono 16-bit |
-| `POST /reset` | back to the start state |
+The camera runs the simulator's control API. Its requests are in the table in [lib/README.md](../lib/README.md#simulator). For example:
 
 ```sh
 curl -s http://172.31.250.10:8099/state
 curl -s --json '{"kind": "motion", "active": true}' http://172.31.250.10:8099/event
 curl -s --json '{"seconds": 5}' http://172.31.250.10:8099/drop
 ```
-
-During a drop the private protocol port refuses connections and the HTTP sessions end. The HTTP port keeps answering.
 
 ## End-to-end suite
 
@@ -68,7 +58,7 @@ During a drop the private protocol port refuses connections and the HTTP session
 - Without `--bench` the tests skip. With `--bench` and no bench, the run stops with `bench is not running: scripts/bench.sh up`.
 - `tests/e2e/conftest.py` defines `--bench`, so the command line must name `tests/e2e` or a file in it. Without that path pytest stops with `unrecognized arguments: --bench`.
 - The suite needs `-p no:homeassistant`, because the Home Assistant pytest plugin blocks sockets.
-- Each module starts from a reset simulator and a fresh config entry. The suite removes every SANNCE entry it finds, so do not point it at a Home Assistant you care about.
+- Each module that uses the camera first removes every SANNCE entry, resets the simulator and adds the camera. It removes the entry again when it ends. The setup tests remove the entries and reset the simulator around each test. So do not point the suite at a Home Assistant you care about.
 - It writes its test audio to `bench/media/`.
 - A run takes about a minute, because the event, reconnect and reauth checks wait on real timers.
 
@@ -76,8 +66,10 @@ During a drop the private protocol port refuses connections and the HTTP session
 
 1. `scripts/bench.sh up`.
 2. In Home Assistant, add SANNCE again and type the I91FW's IP and password. The container reaches the LAN through Docker NAT. LAN search does not cross NAT, so use the IP.
-3. From this machine, `.venv/bin/python -m sannce_aio probe IP --pass PASSWORD` works as before.
+3. To check the camera without Home Assistant, run `.venv/bin/python -m sannce_aio probe IP --pass PASSWORD` from this machine.
 4. Work through [docs/hardware-checklist.md](../docs/hardware-checklist.md).
+
+`scripts/bench.sh reset` and `scripts/bench.sh test` wipe the Home Assistant config, and the end-to-end suite removes every SANNCE entry. All three delete the real camera's entry too. Add it again afterwards.
 
 ## Notes
 
@@ -85,4 +77,4 @@ During a drop the private protocol port refuses connections and the HTTP session
 - Home Assistant runs as root, so `bench/ha-config/` holds root-owned files. `reset` deletes them from a container.
 - `bench/ha-config/` and `bench/media/` are git-ignored.
 - Live view in a browser on this machine reaches go2rtc on 172.31.250.20. The suite does not test WebRTC.
-- If `up` fails while signing in as `dev`, the config holds another owner. Run `scripts/bench.sh reset`.
+- If the config holds another owner, `up` retries the `dev` login for up to 5 minutes, then stops with `error: signing in to http://127.0.0.1:8123 as dev: still 'login refused' after 300 s`. Run `scripts/bench.sh reset`.

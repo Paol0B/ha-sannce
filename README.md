@@ -117,7 +117,7 @@ Both snippets are untested. If the camera has no backchannel, a bridge from go2r
 
 ## Development
 
-The camera library `sannce-aio` lives in `lib/` ([lib/README.md](lib/README.md)). A copy sits in `custom_components/sannce/sannce_aio/`, and only `custom_components/sannce/lib.py` imports it. `manifest.json` lists no requirements until the library is on PyPI.
+The camera library `sannce-aio` lives in `lib/` ([lib/README.md](lib/README.md)). A copy sits in `custom_components/sannce/sannce_aio/`, without the simulator, its control API and the CLI. Only `custom_components/sannce/lib.py` imports it. `manifest.json` lists no requirements until the library is on PyPI.
 
 After you change `lib/src/`, run `scripts/vendor-lib.sh`. `scripts/deploy.sh` runs it too.
 
