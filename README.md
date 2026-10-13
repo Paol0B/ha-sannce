@@ -117,7 +117,7 @@ Both snippets are untested. If the camera has no backchannel, a bridge from go2r
 
 ## Development
 
-The camera library `sannce-aio` lives in `lib/` ([lib/README.md](lib/README.md)). A copy sits in `custom_components/sannce/sannce_aio/`, and only `custom_components/sannce/lib.py` imports it. `manifest.json` lists no requirements until the library is on PyPI.
+The camera library `sannce-aio` lives in `lib/` ([lib/README.md](lib/README.md)). A copy sits in `custom_components/sannce/sannce_aio/`, without the simulator, its control API and the CLI. Only `custom_components/sannce/lib.py` imports it. `manifest.json` lists no requirements until the library is on PyPI.
 
 After you change `lib/src/`, run `scripts/vendor-lib.sh`. `scripts/deploy.sh` runs it too.
 
@@ -143,3 +143,7 @@ Run the tests from the repository root.
 The Home Assistant pytest plugin blocks sockets, so the library tests run without it.
 
 To try the library alone against a camera, run `python -m sannce_aio probe HOST --pass PASSWORD` after the install above. It switches the white light on and back unless you add `--no-light`.
+
+## Bench
+
+`scripts/bench.sh up` starts Home Assistant 2026.10.1 and a simulated camera in Docker, with this integration loaded. `scripts/bench.sh test` starts them fresh, then runs the end-to-end suite and hassfest. See [bench/README.md](bench/README.md).

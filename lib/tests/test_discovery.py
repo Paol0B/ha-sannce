@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import dataclasses
+import errno
 import logging
 import socket
 import struct
@@ -11,8 +12,10 @@ import pytest_asyncio
 from sannce_aio import discovery
 from sannce_aio.discovery import (
     DiscoveredCamera,
+    build_seek_reply,
     build_seek_request,
     discover,
+    is_seek_request,
     parse_discovery_reply,
 )
 from sannce_aio.errors import ProtocolError
@@ -243,6 +246,35 @@ def test_parse_rejects_bad_datagram(examples, reply_fields, case):
         parse_discovery_reply(bad)
 
 
+def test_seek_reply_round_trips(camera):
+    assert parse_discovery_reply(build_seek_reply(camera)) == camera
+
+
+def test_seek_reply_puts_each_field_where_the_example_has_it(camera, reply_fields):
+    payload = build_seek_reply(camera)[10:].decode()
+    fields = payload.removesuffix("\n\n\n").split("\t")[1:]
+
+    assert len(fields) == len(reply_fields)
+    for index in (0, 1, 2, 6, 7, 10, 22, 24, 32):
+        assert fields[index] == reply_fields[index]
+
+
+def test_seek_reply_without_an_ip_reads_the_source_address(camera):
+    reply = build_seek_reply(dataclasses.replace(camera, ip=""))
+
+    assert parse_discovery_reply(reply, "10.0.0.5").ip == "10.0.0.5"
+
+
+def test_seek_request_is_recognised(examples):
+    request = raw(examples, REQUEST)
+
+    assert is_seek_request(request)
+    assert not is_seek_request(raw(examples, REPLY))
+    assert not is_seek_request(request[:9])
+    assert not is_seek_request(b"\x00" + request[1:])
+    assert not is_seek_request(datagram(["CMD", "OTHER"]))
+
+
 class Responder(asyncio.DatagramProtocol):
     def __init__(self, replies, late):
         self.replies = replies
@@ -457,6 +489,49 @@ async def test_discover_survives_unreachable_target(
 
     assert await discover(timeout=WAIT) == [camera]
     assert "send failed" in caplog.text
+
+
+class OptionRecorder:
+    def __init__(self, error=None):
+        self.options = []
+        self.error = error
+
+    def setsockopt(self, level, option, value):
+        if self.error is not None:
+            raise self.error
+        self.options.append((level, option, value))
+
+
+def membership(group, interface):
+    value = socket.inet_aton(group) + socket.inet_aton(interface)
+    return (socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, value)
+
+
+def test_join_groups_joins_each_multicast_target_once_on_the_interface(aim):
+    aim(("234.56.78.9", 3000), ("234.56.78.9", 4000), ("192.168.1.10", 3000))
+    sock = OptionRecorder()
+
+    assert discovery.join_groups(sock, "10.0.0.5") == {}
+    assert sock.options == [membership("234.56.78.9", "10.0.0.5")]
+
+
+def test_join_groups_uses_any_interface_by_default():
+    sock = OptionRecorder()
+
+    discovery.join_groups(sock)
+
+    assert sock.options == [
+        membership("234.56.78.9", "0.0.0.0"),
+        membership("239.255.255.250", "0.0.0.0"),
+    ]
+
+
+def test_join_groups_returns_the_groups_it_cannot_join():
+    error = OSError(errno.ENODEV, "No such device")
+
+    failed = discovery.join_groups(OptionRecorder(error))
+
+    assert failed == {"234.56.78.9": error, "239.255.255.250": error}
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,60 @@
+name: sannce-bench
+
+x-camera-login:
+  user: &camera-user admin
+  password: &camera-password admin123
+
+services:
+  camera:
+    build:
+      context: ..
+      dockerfile: bench/camera/Dockerfile
+    command: ["--user", *camera-user, "--pass", *camera-password]
+    init: true
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    networks:
+      bench:
+        ipv4_address: 172.31.250.10
+
+  rtsp:
+    image: bluenviron/mediamtx:1.21.1-ffmpeg
+    network_mode: service:camera
+    depends_on:
+      - camera
+    environment:
+      MTX_AUTHINTERNALUSERS_0_USER: *camera-user
+      MTX_AUTHINTERNALUSERS_0_PASS: *camera-password
+    volumes:
+      - ./rtsp/mediamtx.yml:/mediamtx.yml:ro
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2026.10.1
+    depends_on:
+      - camera
+    ports:
+      - "127.0.0.1:8123:8123"
+    volumes:
+      - type: bind
+        source: ./ha-config
+        target: /config
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./media
+        target: /media
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../custom_components/sannce
+        target: /config/custom_components/sannce
+        read_only: true
+    networks:
+      bench:
+        ipv4_address: 172.31.250.20
+
+networks:
+  bench:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24

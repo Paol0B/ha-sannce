@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import ipaddress
 import logging
 import socket
@@ -51,6 +50,29 @@ class DiscoveredCamera:
 
 def build_seek_request() -> bytes:
     payload = encode_fields(["IP", "IP", _PROTOCOL, "CMD", "SEEKNVSS"])
+    return _ENVELOPE.pack(_MAGIC, 0, 0, len(payload)) + payload
+
+
+def is_seek_request(datagram: bytes) -> bool:
+    if len(datagram) < _ENVELOPE.size or _ENVELOPE.unpack_from(datagram)[0] != _MAGIC:
+        return False
+    return any(
+        fields[:2] == ["CMD", "SEEKNVSS"]
+        for fields in _units(datagram[_ENVELOPE.size :])
+    )
+
+
+def build_seek_reply(camera: DiscoveredCamera) -> bytes:
+    fields = [""] * (_IP + 1)
+    fields[:2] = ["CMD", "NVSS"]
+    fields[_MAC] = _reverse_mac(camera.mac)
+    fields[_CHANNELS] = str(camera.channels)
+    fields[_SERVER_PORT] = str(camera.server_port)
+    fields[_HTTP_PORT] = str(camera.http_port)
+    fields[_MODEL] = camera.model
+    fields[_SERIAL] = camera.serial
+    fields[_IP] = camera.ip
+    payload = encode_fields([_PROTOCOL, *fields])
     return _ENVELOPE.pack(_MAGIC, 0, 0, len(payload)) + payload
 
 
@@ -107,11 +129,7 @@ def _open_socket() -> socket.socket:
         # TTL 64 and both groups joined, as the app does (protocol.md, Ports and groups)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, _MULTICAST_TTL)
         _bind(sock)
-        groups = {
-            host for host, _ in TARGETS if ipaddress.ip_address(host).is_multicast
-        }
-        for group in groups:
-            _join(sock, group)
+        join_groups(sock)
     except BaseException:
         sock.close()
         raise
@@ -128,10 +146,16 @@ def _bind(sock: socket.socket) -> None:
         sock.bind(("", 0))
 
 
-def _join(sock: socket.socket, group: str) -> None:
-    membership = struct.pack("!4sI", socket.inet_aton(group), socket.INADDR_ANY)
-    with contextlib.suppress(OSError):
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+def join_groups(sock: socket.socket, interface: str = "0.0.0.0") -> dict[str, OSError]:
+    failed = {}
+    groups = {host for host, _ in TARGETS if ipaddress.ip_address(host).is_multicast}
+    for group in sorted(groups):
+        membership = socket.inet_aton(group) + socket.inet_aton(interface)
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+        except OSError as exc:
+            failed[group] = exc
+    return failed
 
 
 def _units(body: bytes) -> Iterator[list[str]]:
