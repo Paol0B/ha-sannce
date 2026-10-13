@@ -43,7 +43,7 @@ The script refreshes the bundled library from `lib/src/`, copies `custom_compone
 | `CONTAINER` | container name | `homeassistant` |
 | `CONFIG_PATH` | config directory on `HOST`, the one the container mounts as `/config` | `/config` |
 
-Both machines need rsync. The SSH user must write to the config directory and run `docker`.
+Both machines need rsync 3.0 or newer. The SSH user must write to the config directory and run `docker`.
 
 ## Setup
 
@@ -130,7 +130,7 @@ python -m venv .venv
 ```
 
 - `PyTurboJPEG` is imported by Home Assistant's camera component. Home Assistant 2026.10 pins version 1.8.3.
-- `ha-ffmpeg` is the Python package of Home Assistant's ffmpeg integration. The speaker needs it. The siren does not, because it builds its tone in Python. The tests do not either: they mark the ffmpeg component as loaded.
+- `ha-ffmpeg` is the Python package of Home Assistant's ffmpeg integration. A real install needs it, because the manifest requires the ffmpeg integration. The siren tone itself is built in Python. The test suite mocks the ffmpeg component, so the tests do not need it.
 
 Run the tests from the repository root.
 
