@@ -42,6 +42,10 @@ def test_manifest_depends_on_the_audio_components() -> None:
     assert {"ffmpeg", "media_source"} <= set(MANIFEST["dependencies"])
 
 
+def test_manifest_depends_on_stream_for_camera_snapshots() -> None:
+    assert "stream" in MANIFEST["dependencies"]
+
+
 @pytest.mark.parametrize("key", ["documentation", "issue_tracker"])
 def test_manifest_links_are_https_urls(key: str) -> None:
     assert re.fullmatch(r"https://\S+", MANIFEST[key])

@@ -21,7 +21,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sannce.audio import SAMPLE_RATE, SAMPLE_WIDTH
 from custom_components.sannce.const import DOMAIN
-from custom_components.sannce.siren import _TONES, _make_tone
+from custom_components.sannce.siren import (
+    _CHUNK_BYTES,
+    _TONES,
+    _tone_chunks,
+    _tone_cycle,
+)
 
 from . import setup_integration
 from .conftest import ALL_CAPS, FakeSannceCamera
@@ -80,17 +85,38 @@ async def test_turn_on_streams_a_tone(
     assert mock_camera.talk_active is False
 
 
+async def tone_pcm(duration: int, tone: str) -> list[bytes]:
+    return [chunk async for chunk in _tone_chunks(duration, tone)]
+
+
 @pytest.mark.parametrize("tone", list(_TONES))
-def test_tone_repeats_one_computed_cycle(tone: str) -> None:
+async def test_tone_repeats_one_cached_cycle(tone: str) -> None:
     freqs, segment = _TONES[tone]
     cycle = int(SAMPLE_RATE * segment) * len(freqs) * SAMPLE_WIDTH
+    _tone_cycle.cache_clear()
 
     with patch.object(math, "sin", wraps=math.sin) as sin:
-        pcm = _make_tone(10, tone)
+        chunks = await tone_pcm(10, tone)
+        again = await tone_pcm(10, tone)
 
+    pcm = b"".join(chunks)
     assert sin.call_count == cycle // SAMPLE_WIDTH
+    assert again == chunks
+    assert max(len(chunk) for chunk in chunks) <= _CHUNK_BYTES
     assert len(pcm) == SAMPLE_RATE * 10 * SAMPLE_WIDTH
     assert pcm == pcm[:cycle] * (len(pcm) // cycle)
+
+
+async def test_tone_ends_inside_a_cycle() -> None:
+    with patch.dict(_TONES, {"test": ((440.0, 880.0), 0.33)}):
+        chunks = await tone_pcm(1, "test")
+        cycle = _tone_cycle("test")
+    _tone_cycle.cache_clear()
+
+    pcm = b"".join(chunks)
+    assert all(chunks)
+    assert len(cycle) < len(pcm) < 2 * len(cycle)
+    assert pcm == (cycle * 2)[: SAMPLE_RATE * SAMPLE_WIDTH]
 
 
 async def test_turn_off_cancels_the_tone(

@@ -1,20 +1,19 @@
 import asyncio
-import sys
-import types
-from collections.abc import AsyncIterable, AsyncIterator, Iterator
-from contextlib import contextmanager
-from unittest.mock import AsyncMock, patch
+from collections.abc import AsyncIterable, AsyncIterator
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from homeassistant.components.media_source import PlayMedia
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sannce import audio
 from custom_components.sannce.coordinator import SannceCoordinator
 
 from . import setup_integration
-from .conftest import FakeSannceCamera
+from .conftest import FakeProcess, FakeSannceCamera, ffmpeg_binary, ffmpeg_running
 
 
 async def coordinator(
@@ -122,14 +121,14 @@ async def test_stop_ends_the_current_play(
         yield b"X"
         await released.wait()
 
-    play = asyncio.create_task(coord.audio.play(hold()))
+    play = asyncio.create_task(coord.audio.play(hold(), owner=object()))
     await asyncio.sleep(0)
     assert coord.audio.playing is True
 
     await coord.audio.stop()
 
-    assert await play is None
     assert coord.audio.playing is False
+    assert await play is None
     assert mock_camera.talk_active is False
     released.set()
 
@@ -230,72 +229,49 @@ async def test_cancelling_a_stop_is_not_swallowed(
     assert await play is None
 
 
-class FakeProcess:
-    def __init__(
-        self, stdout: bytes, *, eof: bool, exit_code: int, stderr: bytes = b""
-    ) -> None:
-        self.stdout = asyncio.StreamReader()
-        self.stdout.feed_data(stdout)
-        if eof:
-            self.stdout.feed_eof()
-        self.returncode: int | None = None
-        self.killed = False
-        self._exit_code = exit_code
-        self._stderr = stderr
-
-    def kill(self) -> None:
-        self.killed = True
-
-    async def communicate(self) -> tuple[bytes, bytes]:
-        self.returncode = -9 if self.killed else self._exit_code
-        return b"", self._stderr
+async def drain(stream: AsyncIterator[bytes]) -> bytes:
+    return b"".join([chunk async for chunk in stream])
 
 
-@contextmanager
-def ffmpeg_running(proc: FakeProcess) -> Iterator[AsyncMock]:
-    component = types.ModuleType("homeassistant.components.ffmpeg")
-    component.get_ffmpeg_manager = lambda hass: types.SimpleNamespace(binary="ffmpeg")
-    spawn = AsyncMock(return_value=proc)
-    with (
-        patch.dict(sys.modules, {"homeassistant.components.ffmpeg": component}),
-        patch.object(audio.asyncio, "create_subprocess_exec", spawn),
-    ):
-        yield spawn
-
-
-async def test_ffmpeg_converts_to_8khz_mono_pcm16(
-    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
-) -> None:
+async def test_ffmpeg_converts_to_8khz_mono_pcm16(hass: HomeAssistant) -> None:
     proc = FakeProcess(b"\x01\x02\x03\x04", eof=True, exit_code=0)
 
     with ffmpeg_running(proc) as spawn:
-        pcm = [chunk async for chunk in audio._ffmpeg_pcm(hass, "http://host/a.mp3")]
+        pcm = await drain(audio._ffmpeg_pcm(hass, "http://host/a.mp3"))
 
     args = spawn.await_args.args
-    assert b"".join(pcm) == b"\x01\x02\x03\x04"
+    assert pcm == b"\x01\x02\x03\x04"
     assert args[0] == "ffmpeg"
     assert "-nostdin" in args
     assert args[args.index("-i") + 1] == "http://host/a.mp3"
     assert args[-7:] == ("-ac", "1", "-ar", "8000", "-f", "s16le", "pipe:1")
     assert not proc.killed
-    assert "ffmpeg failed" not in caplog.text
 
 
-async def test_ffmpeg_failure_is_logged(
-    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+LONG_STDERR = b"x" * 5000 + b"Bad header"
+
+
+@pytest.mark.parametrize(
+    ("stderr", "detail"),
+    [
+        (b"No such file\n", "No such file"),
+        (b"", "exit code 1"),
+        (LONG_STDERR, LONG_STDERR[-audio._ERROR_BYTES :].decode()),
+    ],
+    ids=["stderr", "silent", "long"],
+)
+async def test_ffmpeg_failure_raises(
+    hass: HomeAssistant, stderr: bytes, detail: str
 ) -> None:
-    proc = FakeProcess(b"", eof=True, exit_code=1, stderr=b"No such file")
+    proc = FakeProcess(b"", eof=True, exit_code=1, stderr=stderr)
 
-    with ffmpeg_running(proc):
-        pcm = [chunk async for chunk in audio._ffmpeg_pcm(hass, "http://host/x.mp3")]
+    with ffmpeg_running(proc), pytest.raises(HomeAssistantError) as raised:
+        await drain(audio._ffmpeg_pcm(hass, "http://host/x.mp3"))
 
-    assert pcm == []
-    assert "ffmpeg failed on http://host/x.mp3: No such file" in caplog.text
+    assert str(raised.value) == f"ffmpeg failed on http://host/x.mp3: {detail}"
 
 
-async def test_closing_the_stream_kills_ffmpeg_quietly(
-    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
-) -> None:
+async def test_closing_the_stream_kills_ffmpeg_quietly(hass: HomeAssistant) -> None:
     proc = FakeProcess(b"\x01\x02", eof=False, exit_code=0)
 
     with ffmpeg_running(proc):
@@ -304,4 +280,81 @@ async def test_closing_the_stream_kills_ffmpeg_quietly(
         await stream.aclose()
 
     assert proc.killed
-    assert "ffmpeg failed" not in caplog.text
+
+
+async def test_stopping_a_play_kills_ffmpeg_quietly(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    coord = await coordinator(hass, mock_config_entry)
+    proc = FakeProcess(b"\x00\x01", eof=False, exit_code=0)
+    streaming = asyncio.Event()
+
+    async def watch(pcm: AsyncIterable[bytes]) -> None:
+        async for _ in pcm:
+            streaming.set()
+
+    mock_camera.play_audio.side_effect = watch
+    with ffmpeg_running(proc):
+        play = asyncio.create_task(
+            audio.play_media_to_camera(hass, coord, "http://host/long.mp3")
+        )
+        await streaming.wait()
+        await coord.audio.stop()
+
+        assert await play is None
+    assert proc.killed
+
+
+@pytest.mark.parametrize("stdout_closed", [False, True], ids=["silent", "no_exit"])
+async def test_stalled_ffmpeg_is_killed(
+    hass: HomeAssistant, stdout_closed: bool
+) -> None:
+    proc = FakeProcess(b"", eof=False, exit_code=0)
+    if stdout_closed:
+        proc.stdout.feed_eof()
+
+    with (
+        ffmpeg_running(proc),
+        patch.object(audio, "_STALL_SECONDS", 0.01),
+        pytest.raises(HomeAssistantError, match="ffmpeg stalled"),
+    ):
+        async with asyncio.timeout(10):
+            await drain(audio._ffmpeg_pcm(hass, "http://host/stuck.mp3"))
+
+    assert proc.killed
+
+
+def fake_ffmpeg(tmp_path: Path, script: str) -> str:
+    binary = tmp_path / "ffmpeg"
+    binary.write_text(f"#!/bin/sh\n{script}\n")
+    binary.chmod(0o755)
+    return str(binary)
+
+
+async def test_noisy_ffmpeg_stderr_does_not_block_the_audio(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    # more stderr than the pipe and the stream reader hold together
+    binary = fake_ffmpeg(tmp_path, "head -c 8000000 /dev/zero >&2; printf pcm")
+
+    with ffmpeg_binary(binary):
+        async with asyncio.timeout(10):
+            pcm = await drain(audio._ffmpeg_pcm(hass, "http://host/a.mp3"))
+
+    assert pcm == b"pcm"
+
+
+async def test_closing_a_busy_ffmpeg_does_not_hang(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    binary = fake_ffmpeg(tmp_path, "exec head -c 8000000 /dev/zero")
+
+    with ffmpeg_binary(binary):
+        stream = audio._ffmpeg_pcm(hass, "http://host/a.mp3")
+        async with asyncio.timeout(10):
+            await anext(stream)
+            # let unread output fill the pipe, so the stdout reader pauses
+            await asyncio.sleep(0.2)
+            await stream.aclose()

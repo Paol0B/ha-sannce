@@ -1,8 +1,10 @@
 import array
 import asyncio
+import functools
 import logging
 import math
 import sys
+from collections.abc import AsyncIterator
 from typing import Any
 
 from homeassistant.components.siren import (
@@ -14,7 +16,7 @@ from homeassistant.components.siren.const import ATTR_DURATION, ATTR_TONE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .audio import SAMPLE_RATE, SAMPLE_WIDTH, iter_chunks
+from .audio import SAMPLE_RATE, SAMPLE_WIDTH
 from .coordinator import SannceConfigEntry, SannceCoordinator
 from .entity import SannceEntity
 
@@ -36,7 +38,8 @@ _CHUNK_BYTES = SAMPLE_RATE // 10 * SAMPLE_WIDTH
 SIREN = SirenEntityDescription(key="siren", translation_key="siren")
 
 
-def _make_tone(duration: int, tone: str) -> bytes:
+@functools.cache
+def _tone_cycle(tone: str) -> bytes:
     freqs, segment = _TONES[tone]
     peak = int(32767 * _AMPLITUDE)
     seg_samples = max(1, int(SAMPLE_RATE * segment))
@@ -46,9 +49,16 @@ def _make_tone(duration: int, tone: str) -> bytes:
         cycle[n] = int(peak * math.sin(2 * math.pi * freq * n / SAMPLE_RATE))
     if sys.byteorder == "big":
         cycle.byteswap()
-    pcm = cycle.tobytes()
-    repeats, rest = divmod(SAMPLE_RATE * duration * SAMPLE_WIDTH, len(pcm))
-    return pcm * repeats + pcm[:rest]
+    return cycle.tobytes()
+
+
+async def _tone_chunks(duration: int, tone: str) -> AsyncIterator[bytes]:
+    cycle = _tone_cycle(tone)
+    left = SAMPLE_RATE * duration * SAMPLE_WIDTH
+    while left > 0:
+        for start in range(0, min(left, len(cycle)), _CHUNK_BYTES):
+            yield cycle[start : min(start + _CHUNK_BYTES, left)]
+        left -= len(cycle)
 
 
 async def async_setup_entry(
@@ -80,9 +90,8 @@ class SannceSiren(SannceEntity, SirenEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         duration = min(kwargs.get(ATTR_DURATION) or _DEFAULT_DURATION, _MAX_DURATION)
         tone = kwargs.get(ATTR_TONE) or _DEFAULT_TONE
-        pcm = _make_tone(duration, tone)
         self._task = self.coordinator.config_entry.async_create_background_task(
-            self.hass, self._sound(pcm), "sannce siren"
+            self.hass, self._sound(duration, tone), "sannce siren"
         )
         self._task.add_done_callback(self._finished)
         self._attr_is_on = True
@@ -99,8 +108,8 @@ class SannceSiren(SannceEntity, SirenEntity):
             self._task = None
             await self.coordinator.audio.stop()
 
-    async def _sound(self, pcm: bytes) -> None:
-        await self.coordinator.audio.play(iter_chunks(pcm, _CHUNK_BYTES))
+    async def _sound(self, duration: int, tone: str) -> None:
+        await self.coordinator.audio.play(_tone_chunks(duration, tone))
 
     def _finished(self, task: asyncio.Task[None]) -> None:
         if task is not self._task:

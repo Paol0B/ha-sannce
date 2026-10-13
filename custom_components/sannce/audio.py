@@ -1,6 +1,5 @@
 import asyncio
-import logging
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable
 from contextlib import aclosing, suppress
 from typing import TYPE_CHECKING
 
@@ -9,24 +8,28 @@ from homeassistant.components.media_player.browse_media import (
     async_process_play_media_url,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 if TYPE_CHECKING:
     from .coordinator import SannceCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 SAMPLE_RATE = 8000
 SAMPLE_WIDTH = 2
 
 _READ_SIZE = 8192
+_STALL_SECONDS = 60
+_ERROR_BYTES = 2048
 
 
 async def play_media_to_camera(
-    hass: HomeAssistant, coordinator: "SannceCoordinator", media: str
+    hass: HomeAssistant,
+    coordinator: "SannceCoordinator",
+    media: str,
+    owner: object | None = None,
 ) -> None:
     media_id = await _resolve(hass, media)
     async with aclosing(_ffmpeg_pcm(hass, media_id)) as pcm:
-        await coordinator.audio.play(pcm)
+        await coordinator.audio.play(pcm, owner)
 
 
 async def _resolve(hass: HomeAssistant, media: str) -> str:
@@ -64,26 +67,41 @@ async def _ffmpeg_pcm(hass: HomeAssistant, media_id: str) -> AsyncIterator[bytes
         close_fds=False,
     )
     assert proc.stdout is not None
-    eof = False
+    assert proc.stderr is not None
+    # read stderr alongside stdout: a full stderr pipe would stall ffmpeg
+    errors = asyncio.create_task(_tail(proc.stderr))
     try:
-        while chunk := await proc.stdout.read(_READ_SIZE):
+        while chunk := await _bounded(proc.stdout.read(_READ_SIZE), media_id):
             yield chunk
-        eof = True
+        await _bounded(proc.wait(), media_id)
     finally:
-        # closed early: we kill ffmpeg, so its exit code is ours and is not logged
-        if not eof:
+        # still running: the play was closed early, cancelled or stalled
+        if proc.returncode is None:
             with suppress(ProcessLookupError):
                 proc.kill()
-        _, stderr = await proc.communicate()
-    if proc.returncode:
-        _LOGGER.error(
-            "ffmpeg failed on %s: %s", media_id, stderr.decode(errors="replace")
-        )
+        # wait() returns only after stdout reaches EOF
+        await proc.stdout.read()
+        await proc.wait()
+        stderr = await errors
+    if code := proc.returncode:
+        detail = stderr.decode(errors="replace").strip() or f"exit code {code}"
+        raise HomeAssistantError(f"ffmpeg failed on {media_id}: {detail}")
 
 
-async def iter_chunks(data: bytes, size: int) -> AsyncIterator[bytes]:
-    for start in range(0, len(data), size):
-        yield data[start : start + size]
+async def _bounded[T](step: Awaitable[T], media_id: str) -> T:
+    try:
+        return await asyncio.wait_for(step, _STALL_SECONDS)
+    except TimeoutError:
+        raise HomeAssistantError(
+            f"ffmpeg stalled for {_STALL_SECONDS} s on {media_id}"
+        ) from None
+
+
+async def _tail(stream: asyncio.StreamReader) -> bytes:
+    tail = b""
+    while chunk := await stream.read(_READ_SIZE):
+        tail = (tail + chunk)[-_ERROR_BYTES:]
+    return tail
 
 
 async def _join(task: asyncio.Task[None]) -> None:
@@ -103,6 +121,7 @@ class AudioPlayer:
         self._entry = coordinator.config_entry
         self._camera = coordinator.camera
         self._task: asyncio.Task[None] | None = None
+        self._owner: object | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -110,18 +129,22 @@ class AudioPlayer:
         task = self._task
         return task is not None and not task.done()
 
-    async def play(self, pcm: AsyncIterable[bytes]) -> None:
+    async def play(
+        self, pcm: AsyncIterable[bytes], owner: object | None = None
+    ) -> None:
         async with self._lock:
             await self._cancel()
             task = self._entry.async_create_background_task(
                 self._hass, self._camera.play_audio(pcm), "sannce play audio"
             )
             self._task = task
+            self._owner = owner
         await _join(task)
 
-    async def stop(self) -> None:
+    async def stop(self, owner: object | None = None) -> None:
         async with self._lock:
-            await self._cancel()
+            if owner is None or owner is self._owner:
+                await self._cancel()
 
     async def _cancel(self) -> None:
         task = self._task

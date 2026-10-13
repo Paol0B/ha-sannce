@@ -1,5 +1,8 @@
-from collections.abc import AsyncIterable, Callable, Generator, Iterable
-from contextlib import suppress
+import asyncio
+import sys
+import types
+from collections.abc import AsyncIterable, Callable, Generator, Iterable, Iterator
+from contextlib import contextmanager, suppress
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,7 +16,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.sannce import lib
+from custom_components.sannce import audio, lib
 from custom_components.sannce.const import CONF_SERIAL, DOMAIN
 
 from . import HOST, PASSWORD, USERNAME
@@ -41,6 +44,7 @@ class FakeSannceCamera:
         self.talk_stops = 0
         self._subscribers: list[Callable[[lib.Event], None]] = []
         self._availability_callbacks: list[Callable[[bool], None]] = []
+        self._login_failed_callbacks: list[Callable[[lib.AuthError], None]] = []
 
         self.connect = AsyncMock(side_effect=self._connect)
         self.close = AsyncMock(side_effect=self._close)
@@ -67,6 +71,9 @@ class FakeSannceCamera:
     def on_availability(self, callback: Callable[[bool], None]) -> None:
         self._availability_callbacks.append(callback)
 
+    def on_login_failed(self, callback: Callable[[lib.AuthError], None]) -> None:
+        self._login_failed_callbacks.append(callback)
+
     def emit(self, event: lib.Event) -> None:
         for callback in list(self._subscribers):
             callback(event)
@@ -75,6 +82,10 @@ class FakeSannceCamera:
         self.available = available
         for callback in list(self._availability_callbacks):
             callback(available)
+
+    def fail_login(self, error: lib.AuthError) -> None:
+        for callback in list(self._login_failed_callbacks):
+            callback(error)
 
     async def _connect(self) -> None:
         self.set_available(True)
@@ -114,15 +125,63 @@ class FakeSannceCamera:
             self.talk_stops += 1
 
 
+class FakeProcess:
+    def __init__(
+        self, stdout: bytes, *, eof: bool, exit_code: int, stderr: bytes = b""
+    ) -> None:
+        self.stdout = asyncio.StreamReader()
+        self.stdout.feed_data(stdout)
+        self.stderr = asyncio.StreamReader()
+        self.stderr.feed_data(stderr)
+        self.returncode: int | None = None
+        self.killed = False
+        self._exited = asyncio.Event()
+        if eof:
+            self._exit(exit_code)
+
+    def kill(self) -> None:
+        self.killed = True
+        self._exit(-9)
+
+    async def wait(self) -> int:
+        await self._exited.wait()
+        return self.returncode
+
+    def _exit(self, code: int) -> None:
+        self.stdout.feed_eof()
+        self.stderr.feed_eof()
+        self.returncode = code
+        self._exited.set()
+
+
+@contextmanager
+def ffmpeg_binary(binary: str) -> Iterator[None]:
+    component = types.ModuleType("homeassistant.components.ffmpeg")
+    component.get_ffmpeg_manager = lambda hass: types.SimpleNamespace(binary=binary)
+    with patch.dict(sys.modules, {"homeassistant.components.ffmpeg": component}):
+        yield
+
+
+@contextmanager
+def ffmpeg_running(proc: FakeProcess) -> Iterator[AsyncMock]:
+    spawn = AsyncMock(return_value=proc)
+    with (
+        ffmpeg_binary("ffmpeg"),
+        patch.object(audio.asyncio, "create_subprocess_exec", spawn),
+    ):
+        yield spawn
+
+
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     return None
 
 
-# the ffmpeg component imports haffmpeg, absent here; tests patch audio._ffmpeg_pcm
+# ffmpeg imports haffmpeg and stream imports av, both absent here
 @pytest.fixture(autouse=True)
-def mock_ffmpeg_component(hass: HomeAssistant) -> None:
+def mock_media_components(hass: HomeAssistant) -> None:
     hass.config.components.add("ffmpeg")
+    hass.config.components.add("stream")
 
 
 @pytest.fixture

@@ -58,7 +58,9 @@ class SannceSpeaker(SannceEntity, MediaPlayerEntity):
         self._attr_state = MediaPlayerState.PLAYING
         self.async_write_ha_state()
         try:
-            await play_media_to_camera(self.hass, self.coordinator, media_id)
+            await play_media_to_camera(
+                self.hass, self.coordinator, media_id, owner=self
+            )
         except lib.SannceError as err:
             raise HomeAssistantError(
                 f"Cannot play media on {self.entity_id}: {err}"
@@ -70,7 +72,8 @@ class SannceSpeaker(SannceEntity, MediaPlayerEntity):
                 self.async_write_ha_state()
 
     async def async_media_stop(self) -> None:
-        await self.coordinator.audio.stop()
+        # the siren shares the speaker; leave its tone playing
+        await self.coordinator.audio.stop(owner=self)
 
     async def async_browse_media(
         self,

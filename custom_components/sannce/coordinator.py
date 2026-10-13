@@ -49,6 +49,7 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
         self.connected = False
         self._event_listeners: list[Callable[[lib.Event], None]] = []
         camera.on_availability(self._handle_availability)
+        camera.on_login_failed(self._handle_login_failed)
         config_entry.async_on_unload(camera.subscribe(self._handle_event))
 
     @callback
@@ -82,6 +83,15 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
     def _handle_availability(self, available: bool) -> None:
         self.connected = available
         self.async_update_listeners()
+        # setup runs the first poll itself
+        if available and self.data is not None:
+            self.config_entry.async_create_background_task(
+                self.hass, self.async_request_refresh(), "sannce reconnect refresh"
+            )
+
+    @callback
+    def _handle_login_failed(self, error: lib.AuthError) -> None:
+        self.config_entry.async_start_reauth(self.hass)
 
     @callback
     def _handle_event(self, event: lib.Event) -> None:

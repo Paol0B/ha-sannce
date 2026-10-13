@@ -13,10 +13,13 @@ from homeassistant.components.media_player import (
     MediaType,
 )
 from homeassistant.components.media_source import Unresolvable
+from homeassistant.components.siren import DOMAIN as SIREN_DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_SUPPORTED_FEATURES,
     SERVICE_MEDIA_STOP,
+    SERVICE_TURN_ON,
+    STATE_ON,
     STATE_UNAVAILABLE,
 )
 from homeassistant.core import HomeAssistant
@@ -28,7 +31,7 @@ from custom_components.sannce import audio, lib, media_player
 from custom_components.sannce.const import DOMAIN
 
 from . import setup_integration
-from .conftest import ALL_CAPS, FakeSannceCamera
+from .conftest import ALL_CAPS, FakeProcess, FakeSannceCamera, ffmpeg_running
 
 TTS_URL = "media-source://tts/cloud?message=hello"
 
@@ -159,6 +162,20 @@ async def test_failed_play_returns_to_idle(
     assert hass.states.get(speaker).state == MediaPlayerState.IDLE
 
 
+async def test_ffmpeg_failure_fails_the_play_media_call(
+    hass: HomeAssistant, speaker: str
+) -> None:
+    proc = FakeProcess(b"", eof=True, exit_code=1, stderr=b"Invalid data found")
+
+    with (
+        ffmpeg_running(proc),
+        pytest.raises(HomeAssistantError, match="Invalid data found"),
+    ):
+        await play_media(hass, speaker, "http://host/bad.mp3")
+
+    assert hass.states.get(speaker).state == MediaPlayerState.IDLE
+
+
 async def test_superseding_play_keeps_the_speaker_playing(
     hass: HomeAssistant, speaker: str, mock_camera: FakeSannceCamera
 ) -> None:
@@ -211,10 +228,44 @@ async def test_media_stop_cancels_the_play(
         await hass.services.async_call(
             MP_DOMAIN, SERVICE_MEDIA_STOP, {ATTR_ENTITY_ID: speaker}, blocking=True
         )
-        await call
+        await asyncio.wait_for(call, 10)
 
     assert hass.states.get(speaker).state == MediaPlayerState.IDLE
     assert mock_camera.talk_active is False
+
+
+async def test_media_stop_leaves_the_siren_playing(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    speaker: str,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    siren = entity_registry.async_get_entity_id(
+        SIREN_DOMAIN, DOMAIN, f"{identified_entry.unique_id}_siren"
+    )
+    sounding = asyncio.Event()
+    release = asyncio.Event()
+
+    async def hold(pcm: AsyncIterable[bytes]) -> None:
+        async for _ in pcm:
+            sounding.set()
+            await release.wait()
+
+    mock_camera.play_audio.side_effect = hold
+    await hass.services.async_call(
+        SIREN_DOMAIN, SERVICE_TURN_ON, {ATTR_ENTITY_ID: siren}, blocking=True
+    )
+    await sounding.wait()
+
+    await hass.services.async_call(
+        MP_DOMAIN, SERVICE_MEDIA_STOP, {ATTR_ENTITY_ID: speaker}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert identified_entry.runtime_data.audio.playing is True
+    assert hass.states.get(siren).state == STATE_ON
+    release.set()
 
 
 async def test_speaker_follows_the_connection(

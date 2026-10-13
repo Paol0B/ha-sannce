@@ -153,6 +153,20 @@ async def test_poll_auth_error_starts_reauth(
     assert len(flows) == 1
 
 
+async def test_reconnect_give_up_starts_reauth(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    coordinator: SannceCoordinator,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    mock_camera.set_available(False)
+    mock_camera.fail_login(lib.AuthError("login refused 3 times"))
+    await hass.async_block_till_done()
+
+    flows = list(mock_config_entry.async_get_active_flows(hass, {SOURCE_REAUTH}))
+    assert len(flows) == 1
+
+
 @pytest.mark.parametrize(
     ("caps", "expected"),
     [
@@ -283,6 +297,24 @@ async def test_connected_follows_camera_availability(
 
     assert seen == [False, True]
     stop_listening()
+
+
+async def test_reconnect_refreshes_the_settings(
+    hass: HomeAssistant,
+    coordinator: SannceCoordinator,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    mock_camera.set_available(False)
+    mock_camera.light_on = True
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert mock_camera.get_light.await_count == 1
+
+    mock_camera.set_available(True)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert mock_camera.get_light.await_count == 2
+    assert coordinator.data.light is True
 
 
 async def test_unload_drops_the_event_subscription(
