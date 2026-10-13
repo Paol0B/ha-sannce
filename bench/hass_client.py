@@ -102,10 +102,14 @@ class HassClient:
         async with self._ws_lock:
             message_id = next(self._ids)
             ws = await self._send({"id": message_id, **message})
-            while True:
-                reply = await ws.receive_json(timeout=TIMEOUT.total)
-                if reply.get("id") == message_id and reply.get("type") == "result":
-                    break
+            try:
+                reply = await _result(ws, message_id)
+            except aiohttp.WSMessageTypeError:
+                # no resend: the command may have run, and a service must not run twice
+                await ws.close()
+                raise BenchError(
+                    f"the websocket closed before the {message['type']} reply"
+                ) from None
         if not reply["success"]:
             raise CommandError(reply["error"]["code"], reply["error"]["message"])
         return reply["result"]
@@ -367,6 +371,15 @@ class CameraControl:
         ) as response:
             await _check(response)
             return None if response.status == 204 else await response.json()
+
+
+async def _result(
+    ws: aiohttp.ClientWebSocketResponse, message_id: int
+) -> dict[str, Any]:
+    while True:
+        reply = await ws.receive_json(timeout=TIMEOUT.total)
+        if reply.get("id") == message_id and reply.get("type") == "result":
+            return reply
 
 
 async def _check(response: aiohttp.ClientResponse) -> None:
