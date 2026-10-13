@@ -511,7 +511,7 @@ def test_strings_cover_the_flow() -> None:
         "no_cameras_found",
         "unknown",
     }
-    assert set(config["abort"]) == {"already_configured"}
+    assert set(config["abort"]) == {"already_configured", "reauth_successful"}
 
 
 def test_translations_match_strings() -> None:
