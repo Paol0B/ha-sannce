@@ -27,4 +27,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SannceConfigEntry) -> bo
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: SannceConfigEntry) -> bool:
+    # end talk while the camera is connected: camera.close runs after this
+    await entry.runtime_data.audio.stop()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

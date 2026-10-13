@@ -8,15 +8,23 @@ from homeassistant.components.media_player import (
     ATTR_MEDIA_CONTENT_TYPE,
     DOMAIN as MP_DOMAIN,
     SERVICE_PLAY_MEDIA,
+    MediaPlayerEntityFeature,
     MediaPlayerState,
     MediaType,
 )
-from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE
+from homeassistant.components.media_source import Unresolvable
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    ATTR_SUPPORTED_FEATURES,
+    SERVICE_MEDIA_STOP,
+    STATE_UNAVAILABLE,
+)
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.sannce import audio, media_player
+from custom_components.sannce import audio, lib, media_player
 from custom_components.sannce.const import DOMAIN
 
 from . import setup_integration
@@ -116,6 +124,97 @@ async def test_state_is_playing_while_streaming(
         await call
 
     assert hass.states.get(speaker).state == MediaPlayerState.IDLE
+
+
+def feed(*chunks: bytes):
+    async def fake(hass: HomeAssistant, media_id: str) -> AsyncIterator[bytes]:
+        for chunk in chunks:
+            yield chunk
+
+    return fake
+
+
+@pytest.mark.parametrize(
+    ("error", "raised"),
+    [
+        (ValueError("ffmpeg component not initialized"), ValueError),
+        (FileNotFoundError("ffmpeg"), FileNotFoundError),
+        (Unresolvable("unknown media"), Unresolvable),
+        (lib.TalkBusyError("talk is busy"), HomeAssistantError),
+    ],
+    ids=["no_ffmpeg", "no_binary", "unresolvable", "talk_busy"],
+)
+async def test_failed_play_returns_to_idle(
+    hass: HomeAssistant,
+    speaker: str,
+    mock_camera: FakeSannceCamera,
+    error: Exception,
+    raised: type[Exception],
+) -> None:
+    mock_camera.play_audio.side_effect = error
+
+    with patch.object(audio, "_ffmpeg_pcm", feed(b"\x00\x01")), pytest.raises(raised):
+        await play_media(hass, speaker, "http://host/x.mp3")
+
+    assert hass.states.get(speaker).state == MediaPlayerState.IDLE
+
+
+async def test_superseding_play_keeps_the_speaker_playing(
+    hass: HomeAssistant, speaker: str, mock_camera: FakeSannceCamera
+) -> None:
+    holding = asyncio.Event()
+    release = asyncio.Event()
+
+    async def hold(pcm: AsyncIterable[bytes]) -> None:
+        async for _ in pcm:
+            holding.set()
+            await release.wait()
+
+    mock_camera.play_audio.side_effect = hold
+
+    with patch.object(audio, "_ffmpeg_pcm", feed(b"\x00\x01")):
+        first = hass.async_create_task(play_media(hass, speaker, "http://host/1.mp3"))
+        await holding.wait()
+        holding.clear()
+        second = hass.async_create_task(
+            play_media(hass, speaker, "http://host/2.mp3")
+        )
+        await holding.wait()
+        await first
+
+        assert hass.states.get(speaker).state == MediaPlayerState.PLAYING
+
+        release.set()
+        await second
+
+    assert hass.states.get(speaker).state == MediaPlayerState.IDLE
+
+
+async def test_media_stop_cancels_the_play(
+    hass: HomeAssistant, speaker: str, mock_camera: FakeSannceCamera
+) -> None:
+    streaming = asyncio.Event()
+
+    async def endless(hass: HomeAssistant, media_id: str) -> AsyncIterator[bytes]:
+        yield b"\x00\x01"
+        streaming.set()
+        await asyncio.Event().wait()
+
+    features = hass.states.get(speaker).attributes[ATTR_SUPPORTED_FEATURES]
+    assert features & MediaPlayerEntityFeature.STOP
+
+    with patch.object(audio, "_ffmpeg_pcm", endless):
+        call = hass.async_create_task(play_media(hass, speaker, "http://host/x.mp3"))
+        await streaming.wait()
+        assert hass.states.get(speaker).state == MediaPlayerState.PLAYING
+
+        await hass.services.async_call(
+            MP_DOMAIN, SERVICE_MEDIA_STOP, {ATTR_ENTITY_ID: speaker}, blocking=True
+        )
+        await call
+
+    assert hass.states.get(speaker).state == MediaPlayerState.IDLE
+    assert mock_camera.talk_active is False
 
 
 async def test_speaker_follows_the_connection(

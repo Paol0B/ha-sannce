@@ -40,14 +40,15 @@ def _make_tone(duration: int, tone: str) -> bytes:
     freqs, segment = _TONES[tone]
     peak = int(32767 * _AMPLITUDE)
     seg_samples = max(1, int(SAMPLE_RATE * segment))
-    total = SAMPLE_RATE * duration
-    samples = array.array("h", bytes(total * SAMPLE_WIDTH))
-    for n in range(total):
-        freq = freqs[(n // seg_samples) % len(freqs)]
-        samples[n] = int(peak * math.sin(2 * math.pi * freq * n / SAMPLE_RATE))
+    cycle = array.array("h", bytes(seg_samples * len(freqs) * SAMPLE_WIDTH))
+    for n in range(len(cycle)):
+        freq = freqs[n // seg_samples]
+        cycle[n] = int(peak * math.sin(2 * math.pi * freq * n / SAMPLE_RATE))
     if sys.byteorder == "big":
-        samples.byteswap()
-    return samples.tobytes()
+        cycle.byteswap()
+    pcm = cycle.tobytes()
+    repeats, rest = divmod(SAMPLE_RATE * duration * SAMPLE_WIDTH, len(pcm))
+    return pcm * repeats + pcm[:rest]
 
 
 async def async_setup_entry(

@@ -1,5 +1,7 @@
 import asyncio
+import math
 from collections.abc import AsyncIterable
+from unittest.mock import patch
 
 import pytest
 from homeassistant.components.siren import DOMAIN as SIREN_DOMAIN
@@ -19,6 +21,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sannce.audio import SAMPLE_RATE, SAMPLE_WIDTH
 from custom_components.sannce.const import DOMAIN
+from custom_components.sannce.siren import _TONES, _make_tone
 
 from . import setup_integration
 from .conftest import ALL_CAPS, FakeSannceCamera
@@ -75,6 +78,19 @@ async def test_turn_on_streams_a_tone(
     assert len(pcm) == SAMPLE_RATE * 1 * SAMPLE_WIDTH
     assert any(byte != 0 for byte in pcm)
     assert mock_camera.talk_active is False
+
+
+@pytest.mark.parametrize("tone", list(_TONES))
+def test_tone_repeats_one_computed_cycle(tone: str) -> None:
+    freqs, segment = _TONES[tone]
+    cycle = int(SAMPLE_RATE * segment) * len(freqs) * SAMPLE_WIDTH
+
+    with patch.object(math, "sin", wraps=math.sin) as sin:
+        pcm = _make_tone(10, tone)
+
+    assert sin.call_count == cycle // SAMPLE_WIDTH
+    assert len(pcm) == SAMPLE_RATE * 10 * SAMPLE_WIDTH
+    assert pcm == pcm[:cycle] * (len(pcm) // cycle)
 
 
 async def test_turn_off_cancels_the_tone(

@@ -1,3 +1,5 @@
+import asyncio
+from collections.abc import AsyncIterator
 from unittest.mock import MagicMock
 
 from homeassistant.config_entries import ConfigEntryState
@@ -45,6 +47,35 @@ async def test_setup_and_unload_entry(
 
     assert mock_config_entry.state is ConfigEntryState.NOT_LOADED
     mock_camera.close.assert_awaited_once()
+
+
+async def test_unload_stops_audio_before_closing_the_camera(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    await setup_integration(hass, mock_config_entry)
+    streaming = asyncio.Event()
+    talk_at_close: list[bool] = []
+    close = mock_camera.close.side_effect
+
+    async def endless() -> AsyncIterator[bytes]:
+        yield b"\x00\x01"
+        streaming.set()
+        await asyncio.Event().wait()
+
+    async def record_close() -> None:
+        talk_at_close.append(mock_camera.talk_active)
+        await close()
+
+    mock_camera.close.side_effect = record_close
+    play = asyncio.create_task(mock_config_entry.runtime_data.audio.play(endless()))
+    await streaming.wait()
+
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    await play
+
+    assert talk_at_close == [False]
 
 
 async def test_setup_uses_entry_ports(

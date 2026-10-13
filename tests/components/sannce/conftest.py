@@ -10,6 +10,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_USERNAME,
 )
+from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sannce import lib
@@ -101,6 +102,8 @@ class FakeSannceCamera:
         )
 
     async def _play_audio(self, pcm: AsyncIterable[bytes]) -> None:
+        if self.talk_active:
+            raise lib.TalkBusyError("talk is already active")
         self.talk_active = True
         self.talk_starts += 1
         try:
@@ -114,6 +117,12 @@ class FakeSannceCamera:
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     return None
+
+
+# the ffmpeg component imports haffmpeg, absent here; tests patch audio._ffmpeg_pcm
+@pytest.fixture(autouse=True)
+def mock_ffmpeg_component(hass: HomeAssistant) -> None:
+    hass.config.components.add("ffmpeg")
 
 
 @pytest.fixture

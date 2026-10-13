@@ -38,7 +38,9 @@ class SannceSpeaker(SannceEntity, MediaPlayerEntity):
     _attr_device_class = MediaPlayerDeviceClass.SPEAKER
     _attr_media_content_type = MediaType.MUSIC
     _attr_supported_features = (
-        MediaPlayerEntityFeature.PLAY_MEDIA | MediaPlayerEntityFeature.BROWSE_MEDIA
+        MediaPlayerEntityFeature.PLAY_MEDIA
+        | MediaPlayerEntityFeature.BROWSE_MEDIA
+        | MediaPlayerEntityFeature.STOP
     )
 
     def __init__(
@@ -46,24 +48,29 @@ class SannceSpeaker(SannceEntity, MediaPlayerEntity):
     ) -> None:
         super().__init__(coordinator, description)
         self._attr_state = MediaPlayerState.IDLE
+        self._play_token: object | None = None
 
     async def async_play_media(
         self, media_type: MediaType | str, media_id: str, **kwargs: Any
     ) -> None:
+        token = object()
+        self._play_token = token
         self._attr_state = MediaPlayerState.PLAYING
         self.async_write_ha_state()
         try:
             await play_media_to_camera(self.hass, self.coordinator, media_id)
         except lib.SannceError as err:
-            self._attr_state = MediaPlayerState.IDLE
-            self.async_write_ha_state()
             raise HomeAssistantError(
                 f"Cannot play media on {self.entity_id}: {err}"
             ) from err
-        # a superseding play keeps the speaker busy, so leave the state alone
-        if not self.coordinator.audio.playing:
-            self._attr_state = MediaPlayerState.IDLE
-        self.async_write_ha_state()
+        finally:
+            # a superseded play wakes first; only the latest play may go idle
+            if self._play_token is token:
+                self._attr_state = MediaPlayerState.IDLE
+                self.async_write_ha_state()
+
+    async def async_media_stop(self) -> None:
+        await self.coordinator.audio.stop()
 
     async def async_browse_media(
         self,

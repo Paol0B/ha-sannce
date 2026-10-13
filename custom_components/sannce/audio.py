@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterable, AsyncIterator
-from contextlib import suppress
+from contextlib import aclosing, suppress
 from typing import TYPE_CHECKING
 
 from homeassistant.components import media_source
@@ -25,7 +25,8 @@ async def play_media_to_camera(
     hass: HomeAssistant, coordinator: "SannceCoordinator", media: str
 ) -> None:
     media_id = await _resolve(hass, media)
-    await coordinator.audio.play(_ffmpeg_pcm(hass, media_id))
+    async with aclosing(_ffmpeg_pcm(hass, media_id)) as pcm:
+        await coordinator.audio.play(pcm)
 
 
 async def _resolve(hass: HomeAssistant, media: str) -> str:
@@ -42,6 +43,7 @@ async def _ffmpeg_pcm(hass: HomeAssistant, media_id: str) -> AsyncIterator[bytes
     manager = ffmpeg.get_ffmpeg_manager(hass)
     proc = await asyncio.create_subprocess_exec(
         manager.binary,
+        "-nostdin",
         "-hide_banner",
         "-nostats",
         "-loglevel",
@@ -62,23 +64,35 @@ async def _ffmpeg_pcm(hass: HomeAssistant, media_id: str) -> AsyncIterator[bytes
         close_fds=False,
     )
     assert proc.stdout is not None
+    eof = False
     try:
         while chunk := await proc.stdout.read(_READ_SIZE):
             yield chunk
+        eof = True
     finally:
-        if proc.returncode is None:
+        # closed early: we kill ffmpeg, so its exit code is ours and is not logged
+        if not eof:
             with suppress(ProcessLookupError):
                 proc.kill()
         _, stderr = await proc.communicate()
-        if proc.returncode:
-            _LOGGER.error(
-                "ffmpeg failed on %s: %s", media_id, stderr.decode(errors="replace")
-            )
+    if proc.returncode:
+        _LOGGER.error(
+            "ffmpeg failed on %s: %s", media_id, stderr.decode(errors="replace")
+        )
 
 
 async def iter_chunks(data: bytes, size: int) -> AsyncIterator[bytes]:
     for start in range(0, len(data), size):
         yield data[start : start + size]
+
+
+async def _join(task: asyncio.Task[None]) -> None:
+    try:
+        await task
+    except asyncio.CancelledError:
+        # the task's own cancel is a normal stop; a cancel aimed at us must propagate
+        if (current := asyncio.current_task()) and current.cancelling():
+            raise
 
 
 class AudioPlayer:
@@ -103,8 +117,7 @@ class AudioPlayer:
                 self._hass, self._camera.play_audio(pcm), "sannce play audio"
             )
             self._task = task
-        with suppress(asyncio.CancelledError):
-            await task
+        await _join(task)
 
     async def stop(self) -> None:
         async with self._lock:
@@ -116,5 +129,4 @@ class AudioPlayer:
         if task is None or task.done():
             return
         task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        await _join(task)
