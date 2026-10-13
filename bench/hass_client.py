@@ -192,6 +192,15 @@ class HassClient:
             if item["config_entry_id"] == entry_id
         }
 
+    async def enable_entity(self, entity_id: str) -> None:
+        await self.command(
+            {
+                "type": "config/entity_registry/update",
+                "entity_id": entity_id,
+                "disabled_by": None,
+            }
+        )
+
     async def devices(self, entry_id: str) -> list[dict[str, Any]]:
         registry = await self.command({"type": "config/device_registry/list"})
         return [device for device in registry if device["config_entry_id"] == entry_id]

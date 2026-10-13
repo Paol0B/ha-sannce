@@ -3,7 +3,7 @@ import sys
 import types
 from collections.abc import AsyncIterable, Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager, suppress
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from homeassistant.const import (
@@ -191,6 +191,16 @@ def mock_media_components(hass: HomeAssistant) -> None:
 async def translations(hass: HomeAssistant) -> None:
     await translation.async_load_integrations(hass, {DOMAIN})
     hass.config.components.add(DOMAIN)
+
+
+@pytest.fixture
+def entity_registry_enabled_by_default() -> Generator[None]:
+    with patch(
+        "homeassistant.helpers.entity.Entity.entity_registry_enabled_default",
+        new_callable=PropertyMock,
+        return_value=True,
+    ):
+        yield
 
 
 @pytest.fixture

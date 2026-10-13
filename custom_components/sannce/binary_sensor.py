@@ -22,7 +22,8 @@ class SannceBinarySensorDescription(BinarySensorEntityDescription):
 
 
 # keys are library event kinds. A person arrives as motion, so there is no person
-# sensor. Only motion and vehicle have a capability to check; the rest always exist.
+# sensor. Only motion and vehicle have a capability to check; the rest always exist,
+# so they start disabled: the I91FW may never send those events.
 EVENT_SENSORS = (
     SannceBinarySensorDescription(
         key="motion",
@@ -39,21 +40,25 @@ EVENT_SENSORS = (
         key="intrusion",
         translation_key="intrusion",
         device_class=BinarySensorDeviceClass.MOTION,
+        entity_registry_enabled_default=False,
     ),
     SannceBinarySensorDescription(
         key="line",
         translation_key="line",
         device_class=BinarySensorDeviceClass.MOTION,
+        entity_registry_enabled_default=False,
     ),
     SannceBinarySensorDescription(
         key="tamper",
         device_class=BinarySensorDeviceClass.TAMPER,
+        entity_registry_enabled_default=False,
     ),
     SannceBinarySensorDescription(
         key="video_loss",
         translation_key="video_loss",
         device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
     ),
 )
 

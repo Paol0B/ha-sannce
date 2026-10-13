@@ -63,6 +63,7 @@ async def sensors(
     identified_entry: MockConfigEntry,
     mock_camera: FakeSannceCamera,
     entity_registry: er.EntityRegistry,
+    entity_registry_enabled_by_default: None,
 ) -> dict[str, str]:
     await setup_integration(hass, identified_entry)
     return {kind: sensor_id(entity_registry, identified_entry, kind) for kind in KINDS}
@@ -298,3 +299,23 @@ async def test_removed_sensor_stops_listening_for_events(
     await hass.async_block_till_done()
 
     assert len(coordinator._event_listeners) == listening - 1
+
+
+async def test_rule_sensors_start_disabled(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    await setup_integration(hass, identified_entry)
+
+    ids = {kind: sensor_id(entity_registry, identified_entry, kind) for kind in KINDS}
+    disabled = {
+        kind
+        for kind, entity_id in ids.items()
+        if entity_registry.async_get(entity_id).disabled_by
+        is er.RegistryEntryDisabler.INTEGRATION
+    }
+    shown = {kind for kind, entity_id in ids.items() if hass.states.get(entity_id)}
+    assert disabled == set(UNGATED)
+    assert shown == {"motion", "vehicle"}

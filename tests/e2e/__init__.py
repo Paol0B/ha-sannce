@@ -24,8 +24,8 @@ ENTITY_KEYS = frozenset(
         "speaker",
     }
 )
-# the main stream starts disabled, so it has no state
-DISABLED_KEYS = frozenset({"main"})
+# these start disabled, so they have no state
+DISABLED_KEYS = frozenset({"main", "intrusion", "line", "tamper", "video_loss"})
 
 
 @dataclass(frozen=True)
