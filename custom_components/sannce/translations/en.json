@@ -40,6 +40,20 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "intrusion": {
+        "name": "Intrusion"
+      },
+      "line": {
+        "name": "Line crossing"
+      },
+      "vehicle": {
+        "name": "Vehicle"
+      },
+      "video_loss": {
+        "name": "Video loss"
+      }
+    },
     "camera": {
       "main": {
         "name": "Main stream"
