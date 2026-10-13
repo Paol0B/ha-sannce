@@ -1,5 +1,6 @@
 import logging
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from freezegun.api import FrozenDateTimeFactory
@@ -351,16 +352,21 @@ async def test_a_drop_and_a_return_log_once_each(
 ) -> None:
     caplog.set_level(logging.DEBUG, logger=LOGGER)
 
-    mock_camera.set_available(False)
-    mock_camera.set_available(False)
-    mock_camera.set_available(True)
-    mock_camera.set_available(True)
-    await hass.async_block_till_done(wait_background_tasks=True)
+    with patch.object(
+        coordinator, "async_request_refresh", wraps=coordinator.async_request_refresh
+    ) as refresh:
+        mock_camera.set_available(False)
+        mock_camera.set_available(False)
+        mock_camera.set_available(True)
+        mock_camera.set_available(True)
+        await hass.async_block_till_done(wait_background_tasks=True)
 
     assert availability_log(caplog) == [
         (logging.INFO, f"Camera {HOST} is unavailable"),
         (logging.INFO, f"Camera {HOST} is back online"),
     ]
+    # the debouncer would hide a second request from the poll count
+    refresh.assert_awaited_once()
     assert mock_camera.get_light.await_count == 2
 
 

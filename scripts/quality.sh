@@ -19,6 +19,8 @@ cd "$repo"
 
 echo "== mypy"
 "$python" -m mypy
+echo "== mypy, library on Python 3.11"
+"$python" -m mypy --python-version 3.11 lib/src/sannce_aio
 
 echo "== unit tests and coverage"
 "$python" -m pytest tests/components/sannce -q \
