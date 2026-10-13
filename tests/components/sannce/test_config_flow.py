@@ -24,6 +24,8 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -47,6 +49,8 @@ SERIAL = "SN0000000001"
 MAC = "00:00:5E:00:53:2A"
 NEW_HOST = "192.168.1.20"
 LOGIN = {CONF_USERNAME: USERNAME, CONF_PASSWORD: PASSWORD}
+OTHER_HOST = "192.168.1.99"
+IDENTIFIED = lib.CameraInfo(model="I91FW", serial=SERIAL, firmware="1.0.0", mac=MAC)
 INTEGRATION_DIR = Path(integration.__file__).parent
 
 pytestmark = pytest.mark.usefixtures("mock_find_camera")
@@ -103,6 +107,30 @@ def add_entry(hass: HomeAssistant, host: str, unique_id: str) -> MockConfigEntry
     )
     entry.add_to_hass(hass)
     return entry
+
+
+def keyed_entry(
+    hass: HomeAssistant, unique_id: str, host: str = OTHER_HOST, **identity: str
+) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=unique_id,
+        data=USER_INPUT | DEFAULT_PORTS | {CONF_HOST: host} | identity,
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+def ignored_entry(hass: HomeAssistant, unique_id: str) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN, source=SOURCE_IGNORE, unique_id=unique_id, data={}
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+def siren_id(registry: er.EntityRegistry, key: str) -> str | None:
+    return registry.async_get_entity_id("siren", DOMAIN, f"{key}_siren")
 
 
 def camera_entry(**identity: str) -> MockConfigEntry:
@@ -220,12 +248,11 @@ async def test_config_flow_default_ports(
 
 async def test_config_flow_uses_model_and_serial(
     hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
     mock_camera: FakeSannceCamera,
     mock_setup_entry: AsyncMock,
 ) -> None:
-    mock_camera.info = lib.CameraInfo(
-        model="I91FW", serial=SERIAL, firmware="1.0.0", mac=MAC
-    )
+    mock_camera.info = IDENTIFIED
     result = await start_flow(hass)
 
     result = await submit(hass, result, USER_INPUT)
@@ -238,6 +265,7 @@ async def test_config_flow_uses_model_and_serial(
         CONF_SERIAL: SERIAL,
         CONF_MAC: MAC,
     }
+    mock_find_camera.assert_not_awaited()
 
 
 async def test_config_flow_invalid_auth(
@@ -368,6 +396,25 @@ async def test_config_flow_duplicate_serial(
 
 
 @pytest.mark.parametrize(
+    "stored",
+    [{CONF_SERIAL: SERIAL}, {CONF_MAC: "00-00-5e-00-53-2a"}],
+    ids=["serial", "mac"],
+)
+async def test_adding_a_camera_an_address_keyed_entry_knows_aborts(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera, stored: dict[str, str]
+) -> None:
+    entry = keyed_entry(hass, OTHER_HOST, **stored)
+    mock_camera.info = IDENTIFIED
+    result = await start_flow(hass)
+
+    result = await submit(hass, result, USER_INPUT)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert hass.config_entries.async_entries(DOMAIN) == [entry]
+
+
+@pytest.mark.parametrize(
     ("camera", "identity"),
     [
         (discovered(), {CONF_MODEL: "I91FW", CONF_SERIAL: SERIAL, CONF_MAC: MAC}),
@@ -431,10 +478,16 @@ async def test_config_flow_discovery_skips_configured(
 ) -> None:
     add_entry(hass, "192.168.1.50", SERIAL)
     add_entry(hass, "192.168.1.12", "192.168.1.12")
+    keyed_entry(hass, "192.168.1.70", "192.168.1.70", serial="SN0000000005")
+    keyed_entry(hass, "192.168.1.80", "192.168.1.80", mac="00:00:5E:00:53:2C")
+    ignored_entry(hass, "SN0000000009")
     mock_discover.return_value = [
         discovered(ip="192.168.1.60", serial=SERIAL),
         discovered(ip="192.168.1.12", serial="SN0000000002"),
         discovered(ip="192.168.1.13", serial="SN0000000003"),
+        discovered(ip="192.168.1.71", serial="SN0000000005", mac=""),
+        discovered(ip="192.168.1.81", serial="", mac="00:00:5e:00:53:2c"),
+        discovered(ip="192.168.1.91", serial="SN0000000009"),
     ]
     result = await start_flow(hass)
 
@@ -682,7 +735,141 @@ async def test_reconfigure_stores_an_identity_it_learns(
         CONF_SERIAL: SERIAL,
         CONF_MAC: MAC,
     }
-    assert entry.unique_id == HOST
+    assert entry.unique_id == SERIAL
+
+
+async def test_reconfigure_moves_an_address_key_and_the_entity_ids(
+    hass: HomeAssistant,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    entry = camera_entry(mac=MAC)
+    result = await start_reconfigure(hass, entry)
+    siren = siren_id(entity_registry, HOST)
+    entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.unique_id == NEW_HOST
+    assert siren is not None
+    assert siren_id(entity_registry, NEW_HOST) == siren
+    moved = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+    assert len(moved) == len(entities)
+    [device] = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+    assert device.identifiers == {(DOMAIN, NEW_HOST)}
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_reconfigure_frees_the_old_address_for_another_camera(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera, mock_setup_entry: AsyncMock
+) -> None:
+    entry = add_entry(hass, HOST, HOST)
+    result = await entry.start_reconfigure_flow(hass)
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+    assert result["reason"] == "reconfigure_successful"
+
+    result = await submit(hass, await start_flow(hass), USER_INPUT)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == HOST
+    assert entry.unique_id == NEW_HOST
+
+
+@pytest.mark.parametrize(
+    ("stored", "found", "kept", "unique_id"),
+    [
+        ({CONF_SERIAL: SERIAL, CONF_MAC: MAC}, None, {}, NEW_HOST),
+        (
+            {CONF_MAC: MAC},
+            discovered(ip=NEW_HOST, serial="SN0000000002", mac=""),
+            {CONF_SERIAL: "SN0000000002"},
+            "SN0000000002",
+        ),
+    ],
+    ids=["nothing_known", "no_shared_key"],
+)
+async def test_reconfigure_to_an_unproven_camera_forgets_the_old_identity(
+    hass: HomeAssistant,
+    mock_camera: FakeSannceCamera,
+    mock_find_camera: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+    stored: dict[str, str],
+    found: lib.DiscoveredCamera | None,
+    kept: dict[str, str],
+    unique_id: str,
+) -> None:
+    entry = camera_entry(model="I91FW", **stored)
+    result = await start_reconfigure(hass, entry)
+    mock_find_camera.return_value = found
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    identity = {key: entry.data.get(key) for key in (CONF_SERIAL, CONF_MAC)}
+    assert {key: value for key, value in identity.items() if value} == kept
+    assert entry.unique_id == unique_id
+    [device] = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+    assert device.connections == set()
+
+    mock_find_camera.return_value = discovered()
+    result = await start_dhcp(hass)
+    await hass.async_block_till_done()
+
+    assert result["step_id"] == "dhcp_confirm"
+    assert entry.data[CONF_HOST] == NEW_HOST
+
+
+async def test_reconfigure_at_the_same_address_keeps_the_identity(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera
+) -> None:
+    entry = camera_entry(model="I91FW", serial=SERIAL, mac=MAC)
+    result = await start_reconfigure(hass, entry)
+
+    result = await submit(hass, result, USER_INPUT | {CONF_USERNAME: "viewer"})
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert (entry.data[CONF_SERIAL], entry.data[CONF_MAC]) == (SERIAL, MAC)
+    assert entry.unique_id == SERIAL
+
+
+async def test_reconfigure_skips_the_lan_search_when_the_login_gives_the_identity(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera, mock_find_camera: AsyncMock
+) -> None:
+    mock_camera.info = IDENTIFIED
+    entry = camera_entry(model="I91FW", serial=SERIAL, mac=MAC)
+    result = await start_reconfigure(hass, entry)
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_HOST] == NEW_HOST
+    mock_find_camera.assert_not_awaited()
+
+
+async def test_reconfigure_takes_a_camera_whose_discovery_was_ignored(
+    hass: HomeAssistant,
+    mock_camera: FakeSannceCamera,
+    mock_find_camera: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ignored_entry(hass, SERIAL)
+    entry = camera_entry()
+    result = await start_reconfigure(hass, entry)
+    mock_find_camera.return_value = discovered(ip=NEW_HOST)
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.unique_id == SERIAL
+    assert hass.config_entries.async_entries(DOMAIN, include_ignore=True) == [entry]
+    assert "already in use" not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -782,6 +969,43 @@ async def test_reconfigure_to_another_configured_camera_aborts(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
     assert entry.data[CONF_HOST] == HOST
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [{CONF_SERIAL: SERIAL}, {CONF_MAC: "00-00-5e-00-53-2a"}],
+    ids=["serial", "mac"],
+)
+async def test_reconfigure_to_a_camera_an_address_keyed_entry_knows_aborts(
+    hass: HomeAssistant,
+    mock_camera: FakeSannceCamera,
+    mock_find_camera: AsyncMock,
+    stored: dict[str, str],
+) -> None:
+    keyed_entry(hass, OTHER_HOST, **stored)
+    entry = camera_entry()
+    result = await start_reconfigure(hass, entry)
+    mock_find_camera.return_value = discovered(ip=NEW_HOST)
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == HOST
+
+
+async def test_reconfigure_leaves_a_key_another_entry_holds(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera
+) -> None:
+    keyed_entry(hass, NEW_HOST)
+    entry = camera_entry()
+    result = await start_reconfigure(hass, entry)
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert (entry.unique_id, entry.data[CONF_HOST]) == (HOST, HOST)
 
 
 async def test_reconfigure_to_an_address_in_use_aborts(
@@ -906,6 +1130,40 @@ async def test_dhcp_moves_a_known_camera_to_its_new_address(
     assert entry.state is ConfigEntryState.LOADED
     assert mock_camera_class.call_args.args[0] == NEW_HOST
     mock_find_camera.assert_not_awaited()
+
+
+async def test_dhcp_moves_an_address_key_with_the_address(
+    hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    entry = camera_entry(mac=MAC)
+    await setup_integration(hass, entry)
+    siren = siren_id(entity_registry, HOST)
+
+    result = await start_dhcp(hass, ip=NEW_HOST)
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "already_configured"
+    assert (entry.unique_id, entry.data[CONF_HOST]) == (NEW_HOST, NEW_HOST)
+    assert siren is not None
+    assert siren_id(entity_registry, NEW_HOST) == siren
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_dhcp_leaves_a_key_another_entry_holds(
+    hass: HomeAssistant, mock_find_camera: AsyncMock
+) -> None:
+    keyed_entry(hass, NEW_HOST)
+    entry = camera_entry(mac=MAC)
+    entry.add_to_hass(hass)
+
+    result = await start_dhcp(hass, ip=NEW_HOST)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert (entry.unique_id, entry.data[CONF_HOST]) == (HOST, HOST)
 
 
 async def test_dhcp_at_the_known_address_changes_nothing(
