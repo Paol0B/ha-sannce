@@ -76,6 +76,17 @@
           "smart": "Smart"
         }
       }
+    },
+    "switch": {
+      "motion_detection": {
+        "name": "Motion detection"
+      },
+      "person_detection": {
+        "name": "Person detection"
+      },
+      "vehicle_detection": {
+        "name": "Vehicle detection"
+      }
     }
   }
 }

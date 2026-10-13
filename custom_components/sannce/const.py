@@ -10,6 +10,7 @@ PLATFORMS: list[Platform] = [
     Platform.CAMERA,
     Platform.LIGHT,
     Platform.SELECT,
+    Platform.SWITCH,
 ]
 
 CONF_NVS_PORT = "nvs_port"
