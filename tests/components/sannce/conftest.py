@@ -3,11 +3,17 @@ from contextlib import suppress
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_MAC,
+    CONF_MODEL,
+    CONF_PASSWORD,
+    CONF_USERNAME,
+)
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sannce import lib
-from custom_components.sannce.const import DOMAIN
+from custom_components.sannce.const import CONF_SERIAL, DOMAIN
 
 from . import HOST, PASSWORD, USERNAME
 
@@ -108,6 +114,23 @@ def mock_config_entry() -> MockConfigEntry:
         title=HOST,
         unique_id=HOST,
         data={CONF_HOST: HOST, CONF_USERNAME: USERNAME, CONF_PASSWORD: PASSWORD},
+    )
+
+
+@pytest.fixture
+def identified_entry() -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="I91FW",
+        unique_id="SN123456",
+        data={
+            CONF_HOST: HOST,
+            CONF_USERNAME: USERNAME,
+            CONF_PASSWORD: PASSWORD,
+            CONF_MODEL: "I91FW",
+            CONF_SERIAL: "SN123456",
+            CONF_MAC: "AA-BB-CC-DD-EE-FF",
+        },
     )
 
 

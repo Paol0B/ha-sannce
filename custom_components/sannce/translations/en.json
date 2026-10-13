@@ -38,5 +38,15 @@
     "abort": {
       "already_configured": "This camera is already configured."
     }
+  },
+  "entity": {
+    "camera": {
+      "main": {
+        "name": "Main stream"
+      },
+      "sub": {
+        "name": "Sub stream"
+      }
+    }
   }
 }

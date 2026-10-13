@@ -3,8 +3,9 @@ from datetime import timedelta
 from homeassistant.const import Platform
 
 DOMAIN = "sannce"
+MANUFACTURER = "SANNCE"
 
-PLATFORMS: list[Platform] = []
+PLATFORMS: list[Platform] = [Platform.CAMERA]
 
 CONF_NVS_PORT = "nvs_port"
 CONF_HTTP_PORT = "http_port"
