@@ -42,6 +42,7 @@ USER_INPUT = {CONF_HOST: HOST, CONF_USERNAME: USERNAME, CONF_PASSWORD: PASSWORD}
 DEFAULT_PORTS = {CONF_NVS_PORT: 3000, CONF_HTTP_PORT: 80, CONF_RTSP_PORT: 554}
 SERIAL = "SN0000000001"
 MAC = "00:00:5E:00:53:2A"
+NEW_HOST = "192.168.1.20"
 INTEGRATION_DIR = Path(integration.__file__).parent
 
 pytestmark = pytest.mark.usefixtures("mock_find_camera")
@@ -98,6 +99,22 @@ def add_entry(hass: HomeAssistant, host: str, unique_id: str) -> MockConfigEntry
     )
     entry.add_to_hass(hass)
     return entry
+
+
+def camera_entry(**identity: str) -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="I91FW",
+        unique_id=identity.get(CONF_SERIAL, HOST),
+        data=USER_INPUT | DEFAULT_PORTS | identity,
+    )
+
+
+async def start_reconfigure(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> ConfigFlowResult:
+    await setup_integration(hass, entry)
+    return await entry.start_reconfigure_flow(hass)
 
 
 async def start_flow(hass: HomeAssistant) -> ConfigFlowResult:
@@ -565,10 +582,218 @@ async def test_reauth_flow_invalid_auth(
     assert mock_config_entry.data[CONF_PASSWORD] == "new-secret"
 
 
+async def test_reconfigure_form_shows_the_current_settings(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera
+) -> None:
+    entry = camera_entry(serial=SERIAL, mac=MAC)
+
+    result = await start_reconfigure(hass, entry)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    assert list(fields(result)) == [
+        CONF_HOST,
+        CONF_USERNAME,
+        CONF_PASSWORD,
+        CONF_NVS_PORT,
+        CONF_HTTP_PORT,
+        CONF_RTSP_PORT,
+    ]
+    current = {CONF_HOST: HOST, CONF_USERNAME: USERNAME} | DEFAULT_PORTS
+    assert suggested(result) == current
+
+
+async def test_reconfigure_moves_the_entry_to_a_new_address(
+    hass: HomeAssistant,
+    mock_camera_class: MagicMock,
+    mock_camera: FakeSannceCamera,
+    mock_find_camera: AsyncMock,
+) -> None:
+    entry = camera_entry(model="I91FW", serial=SERIAL, mac=MAC)
+    result = await start_reconfigure(hass, entry)
+    mock_find_camera.return_value = discovered(ip=NEW_HOST)
+
+    moved = USER_INPUT | DEFAULT_PORTS | {CONF_HOST: NEW_HOST, CONF_PASSWORD: ""}
+
+    result = await submit(hass, result, moved)
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data == USER_INPUT | DEFAULT_PORTS | {
+        CONF_HOST: NEW_HOST,
+        CONF_MODEL: "I91FW",
+        CONF_SERIAL: SERIAL,
+        CONF_MAC: MAC,
+    }
+    assert entry.state is ConfigEntryState.LOADED
+    assert mock_camera_class.call_args.args == (NEW_HOST, USERNAME, PASSWORD)
+    mock_find_camera.assert_awaited_once_with(NEW_HOST)
+
+
+async def test_reconfigure_changes_the_login_and_the_ports(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera
+) -> None:
+    changes = {
+        CONF_USERNAME: "viewer",
+        CONF_PASSWORD: "new-secret",
+        CONF_NVS_PORT: 3001,
+        CONF_HTTP_PORT: 8080,
+        CONF_RTSP_PORT: 8554,
+    }
+    entry = camera_entry()
+    result = await start_reconfigure(hass, entry)
+
+    result = await submit(hass, result, {CONF_HOST: HOST} | changes)
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data == {CONF_HOST: HOST} | changes
+    assert entry.unique_id == HOST
+
+
+async def test_reconfigure_stores_an_identity_it_learns(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera, mock_find_camera: AsyncMock
+) -> None:
+    entry = camera_entry()
+    result = await start_reconfigure(hass, entry)
+    mock_find_camera.return_value = discovered()
+
+    result = await submit(hass, result, USER_INPUT | DEFAULT_PORTS)
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data == USER_INPUT | DEFAULT_PORTS | {
+        CONF_MODEL: "I91FW",
+        CONF_SERIAL: SERIAL,
+        CONF_MAC: MAC,
+    }
+    assert entry.unique_id == HOST
+
+
+@pytest.mark.parametrize(
+    ("error", "base"),
+    [
+        (lib.AuthError("bad password"), "invalid_auth"),
+        (lib.ConnectError("unreachable"), "cannot_connect"),
+    ],
+    ids=["auth", "connect"],
+)
+async def test_reconfigure_keeps_the_entry_when_the_probe_fails(
+    hass: HomeAssistant,
+    mock_camera: FakeSannceCamera,
+    mock_find_camera: AsyncMock,
+    error: lib.SannceError,
+    base: str,
+) -> None:
+    entry = camera_entry(serial=SERIAL)
+    result = await start_reconfigure(hass, entry)
+    mock_camera.connect.side_effect = error
+    typed = USER_INPUT | DEFAULT_PORTS | {CONF_HOST: NEW_HOST, CONF_PASSWORD: "wrong"}
+
+    result = await submit(hass, result, typed)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    assert result["errors"] == {"base": base}
+    assert suggested(result)[CONF_HOST] == NEW_HOST
+    assert CONF_PASSWORD not in suggested(result)
+    assert (entry.data[CONF_HOST], entry.data[CONF_PASSWORD]) == (HOST, PASSWORD)
+    mock_find_camera.assert_not_awaited()
+
+    mock_camera.connect.side_effect = None
+    result = await submit(hass, result, typed | {CONF_PASSWORD: "new-secret"})
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_PASSWORD] == "new-secret"
+
+
+@pytest.mark.parametrize(
+    ("identity", "found"),
+    [
+        (
+            {CONF_SERIAL: SERIAL, CONF_MAC: MAC},
+            discovered(ip=NEW_HOST, serial="SN0000000002", mac=MAC),
+        ),
+        (
+            {CONF_MAC: MAC},
+            discovered(ip=NEW_HOST, serial="SN0000000002", mac="00:00:5E:00:53:2B"),
+        ),
+    ],
+    ids=["serial", "mac"],
+)
+async def test_reconfigure_refuses_a_different_camera(
+    hass: HomeAssistant,
+    mock_camera: FakeSannceCamera,
+    mock_find_camera: AsyncMock,
+    identity: dict[str, str],
+    found: lib.DiscoveredCamera,
+) -> None:
+    entry = camera_entry(**identity)
+    result = await start_reconfigure(hass, entry)
+    mock_find_camera.return_value = found
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "wrong_camera"
+    assert entry.data[CONF_HOST] == HOST
+
+
+async def test_reconfigure_matches_the_mac_in_any_format(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera, mock_find_camera: AsyncMock
+) -> None:
+    entry = camera_entry(mac="00-00-5e-00-53-2a")
+    result = await start_reconfigure(hass, entry)
+    mock_find_camera.return_value = discovered(ip=NEW_HOST, serial="")
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_HOST] == NEW_HOST
+
+
+async def test_reconfigure_to_another_configured_camera_aborts(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera, mock_find_camera: AsyncMock
+) -> None:
+    add_entry(hass, "192.168.1.99", SERIAL)
+    entry = camera_entry()
+    result = await start_reconfigure(hass, entry)
+    mock_find_camera.return_value = discovered(ip=NEW_HOST)
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == HOST
+
+
+async def test_reconfigure_to_an_address_in_use_aborts(
+    hass: HomeAssistant, mock_camera: FakeSannceCamera
+) -> None:
+    add_entry(hass, NEW_HOST, NEW_HOST)
+    entry = camera_entry()
+    result = await start_reconfigure(hass, entry)
+    connects = mock_camera.connect.await_count
+
+    result = await submit(hass, result, USER_INPUT | {CONF_HOST: NEW_HOST})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert mock_camera.connect.await_count == connects
+
+
 def test_strings_cover_the_flow() -> None:
     config = json.loads((INTEGRATION_DIR / "strings.json").read_text())["config"]
 
-    assert set(config["step"]) == {"user", "pick_camera", "reauth_confirm"}
+    assert set(config["step"]) == {
+        "user",
+        "pick_camera",
+        "reauth_confirm",
+        "reconfigure",
+    }
     assert set(config["step"]["user"]["data"]) == {
         CONF_HOST,
         CONF_USERNAME,
@@ -577,6 +802,9 @@ def test_strings_cover_the_flow() -> None:
         CONF_HTTP_PORT,
         CONF_RTSP_PORT,
     }
+    assert set(config["step"]["reconfigure"]["data"]) == set(
+        config["step"]["user"]["data"]
+    )
     assert set(config["step"]["pick_camera"]["data"]) == {CONF_HOST}
     assert set(config["step"]["reauth_confirm"]["data"]) == {CONF_PASSWORD}
     for name in (CONF_HOST, CONF_USERNAME):
@@ -588,7 +816,11 @@ def test_strings_cover_the_flow() -> None:
         "no_cameras_found",
         "unknown",
     }
-    assert set(config["abort"]) == {"already_configured", "reauth_successful"}
+    assert set(config["abort"]) == {
+        "already_configured",
+        "reauth_successful",
+        "wrong_camera",
+    }
 
 
 def test_translations_match_strings() -> None:

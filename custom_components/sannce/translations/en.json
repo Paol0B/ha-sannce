@@ -31,6 +31,26 @@
           "host": "Cameras found on your network."
         }
       },
+      "reconfigure": {
+        "title": "Change the camera connection",
+        "description": "Change the address, login or ports. Leave the password empty to keep the current one.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password",
+          "nvs_port": "Private protocol port",
+          "http_port": "HTTP port",
+          "rtsp_port": "RTSP port"
+        },
+        "data_description": {
+          "host": "IP address or host name of the camera.",
+          "username": "Login name of the camera.",
+          "password": "New password of the camera login. Empty keeps the current one.",
+          "nvs_port": "Used for events and the speaker.",
+          "http_port": "Used for settings such as the light and detection.",
+          "rtsp_port": "Used for the video streams."
+        }
+      },
       "reauth_confirm": {
         "title": "Sign in again",
         "description": "Login to {host} failed. Enter the new password for {username}.",
@@ -51,7 +71,8 @@
     },
     "abort": {
       "already_configured": "This camera is already configured.",
-      "reauth_successful": "Password updated."
+      "reauth_successful": "Password updated.",
+      "wrong_camera": "This address belongs to another camera. Add that camera as a new device instead."
     }
   },
   "exceptions": {

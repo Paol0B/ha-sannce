@@ -3,7 +3,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
 from homeassistant.const import (
     CONF_HOST,
     CONF_MAC,
@@ -13,6 +13,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.device_registry import format_mac
 
 from . import lib
 from .const import (
@@ -40,6 +41,16 @@ USER_SCHEMA = vol.Schema(
     }
 )
 REAUTH_SCHEMA = vol.Schema({vol.Required(CONF_PASSWORD): str})
+RECONFIGURE_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_HOST): str,
+        vol.Required(CONF_USERNAME): str,
+        vol.Optional(CONF_PASSWORD, default=""): str,
+        vol.Required(CONF_NVS_PORT, default=DEFAULT_NVS_PORT): cv.port,
+        vol.Required(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): cv.port,
+        vol.Required(CONF_RTSP_PORT, default=DEFAULT_RTSP_PORT): cv.port,
+    }
+)
 
 
 class _ProbeError(Exception):
@@ -71,6 +82,29 @@ async def _async_find(host: str) -> lib.DiscoveredCamera | None:
     except OSError as err:
         _LOGGER.debug("Searching the network for %s failed: %s", host, err)
         return None
+
+
+def _identity(
+    info: lib.CameraInfo, found: lib.DiscoveredCamera | None
+) -> dict[str, str]:
+    identity = {CONF_MODEL: info.model, CONF_SERIAL: info.serial, CONF_MAC: info.mac}
+    if found:
+        searched = {
+            CONF_MODEL: found.model,
+            CONF_SERIAL: found.serial,
+            CONF_MAC: found.mac,
+        }
+        identity = {key: value or searched[key] for key, value in identity.items()}
+    return {key: value for key, value in identity.items() if value}
+
+
+def _same_camera(known: Mapping[str, Any], seen: Mapping[str, str]) -> bool:
+    # the serial decides when both sides know it, else the MAC, else nothing does
+    if known.get(CONF_SERIAL) and seen.get(CONF_SERIAL):
+        return str(known[CONF_SERIAL]) == seen[CONF_SERIAL]
+    if known.get(CONF_MAC) and seen.get(CONF_MAC):
+        return format_mac(known[CONF_MAC]) == format_mac(seen[CONF_MAC])
+    return True
 
 
 def _label(camera: lib.DiscoveredCamera) -> str:
@@ -174,6 +208,55 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            host = user_input[CONF_HOST]
+            self._async_abort_entries_match({CONF_HOST: host})
+            data = user_input | {
+                CONF_PASSWORD: user_input[CONF_PASSWORD] or entry.data[CONF_PASSWORD]
+            }
+            try:
+                info = await _async_probe(self.hass, data)
+            except _ProbeError as err:
+                errors["base"] = str(err)
+            else:
+                identity = _identity(info, await _async_find(host))
+                if reason := self._conflict(entry, identity):
+                    return self.async_abort(reason=reason)
+                return self.async_update_reload_and_abort(
+                    entry, data_updates=data | identity
+                )
+        current = {
+            key: value
+            for key, value in (user_input or entry.data).items()
+            if key != CONF_PASSWORD
+        }
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                RECONFIGURE_SCHEMA, current
+            ),
+            errors=errors,
+        )
+
+    def _conflict(self, entry: ConfigEntry, identity: Mapping[str, str]) -> str | None:
+        serial = identity.get(CONF_SERIAL)
+        if (
+            serial
+            and serial != entry.unique_id
+            and self.hass.config_entries.async_entry_for_domain_unique_id(
+                DOMAIN, serial
+            )
+        ):
+            return "already_configured"
+        if not _same_camera(entry.data, identity):
+            return "wrong_camera"
+        return None
+
     def _show_user_form(
         self, suggested: Mapping[str, Any] | None, errors: dict[str, str]
     ) -> ConfigFlowResult:
@@ -187,14 +270,9 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
         self, data: dict[str, Any], info: lib.CameraInfo
     ) -> ConfigFlowResult:
         host = data[CONF_HOST]
-        found = self._found.get(host)
-        serial = info.serial or (found and found.serial)
-        model = info.model or (found and found.model)
-        mac = info.mac or (found and found.mac)
-        await self.async_set_unique_id(serial or host)
+        identity = _identity(info, self._found.get(host))
+        await self.async_set_unique_id(identity.get(CONF_SERIAL) or host)
         self._abort_if_unique_id_configured()
-        identity = {CONF_MODEL: model, CONF_SERIAL: serial, CONF_MAC: mac}
         return self.async_create_entry(
-            title=model or host,
-            data=data | {key: value for key, value in identity.items() if value},
+            title=identity.get(CONF_MODEL) or host, data=data | identity
         )
