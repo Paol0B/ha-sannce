@@ -230,6 +230,15 @@ def identified_entry() -> MockConfigEntry:
     )
 
 
+# the HA test plugin blocks sockets, so every flow that searches needs this
+@pytest.fixture
+def mock_find_camera() -> Generator[AsyncMock]:
+    with patch(
+        "custom_components.sannce.lib.find_camera", AsyncMock(return_value=None)
+    ) as find_camera:
+        yield find_camera
+
+
 @pytest.fixture
 def mock_camera_class() -> Generator[MagicMock]:
     with patch(

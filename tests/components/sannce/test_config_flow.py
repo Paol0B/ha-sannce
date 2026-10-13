@@ -44,6 +44,8 @@ SERIAL = "SN0000000001"
 MAC = "00:00:5E:00:53:2A"
 INTEGRATION_DIR = Path(integration.__file__).parent
 
+pytestmark = pytest.mark.usefixtures("mock_find_camera")
+
 
 @pytest.fixture
 def mock_setup_entry() -> Generator[AsyncMock]:
@@ -345,6 +347,7 @@ async def test_config_flow_duplicate_serial(
 async def test_config_flow_discovery(
     hass: HomeAssistant,
     mock_discover: AsyncMock,
+    mock_find_camera: AsyncMock,
     mock_camera_class: MagicMock,
     mock_setup_entry: AsyncMock,
     camera: lib.DiscoveredCamera,
@@ -389,6 +392,7 @@ async def test_config_flow_discovery(
         rtsp_port=554,
         session=async_get_clientsession(hass),
     )
+    mock_find_camera.assert_not_awaited()
 
 
 async def test_config_flow_discovery_skips_configured(
@@ -427,6 +431,79 @@ async def test_config_flow_discovery_finds_nothing(
     assert result["step_id"] == "user"
     assert result["errors"] == {"base": "no_cameras_found"}
     assert suggested(result)[CONF_USERNAME] == "viewer"
+
+
+async def test_adding_by_ip_takes_the_identity_from_the_lan_search(
+    hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
+    mock_camera: FakeSannceCamera,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    mock_find_camera.return_value = discovered()
+    result = await start_flow(hass)
+
+    result = await submit(hass, result, USER_INPUT)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "I91FW"
+    assert result["result"].unique_id == SERIAL
+    assert result["data"] == USER_INPUT | DEFAULT_PORTS | {
+        CONF_MODEL: "I91FW",
+        CONF_SERIAL: SERIAL,
+        CONF_MAC: MAC,
+    }
+    mock_find_camera.assert_awaited_once_with(HOST)
+
+
+@pytest.mark.parametrize(
+    "failure", [None, OSError("network unreachable")], ids=["silent", "failed"]
+)
+async def test_adding_by_ip_without_a_search_answer_keys_the_entry_by_host(
+    hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
+    mock_camera: FakeSannceCamera,
+    mock_setup_entry: AsyncMock,
+    failure: OSError | None,
+) -> None:
+    mock_find_camera.side_effect = failure
+    result = await start_flow(hass)
+
+    result = await submit(hass, result, USER_INPUT)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert (result["title"], result["result"].unique_id) == (HOST, HOST)
+    assert result["data"] == USER_INPUT | DEFAULT_PORTS
+
+
+async def test_a_failed_login_skips_the_lan_search(
+    hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    mock_camera.connect.side_effect = lib.AuthError("bad password")
+    result = await start_flow(hass)
+
+    result = await submit(hass, result, USER_INPUT)
+
+    assert result["errors"] == {"base": "invalid_auth"}
+    mock_find_camera.assert_not_awaited()
+
+
+async def test_adding_a_known_camera_at_a_new_address_aborts(
+    hass: HomeAssistant,
+    mock_find_camera: AsyncMock,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    entry = add_entry(hass, "192.168.1.99", SERIAL)
+    mock_find_camera.return_value = discovered()
+    result = await start_flow(hass)
+
+    result = await submit(hass, result, USER_INPUT)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == "192.168.1.99"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
 
 
 async def test_setup_auth_failure_starts_reauth(

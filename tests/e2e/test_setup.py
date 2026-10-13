@@ -19,9 +19,17 @@ async def test_adding_by_ip_creates_the_entry_and_every_entity(hass, camera):
     [listed] = await hass.entries()
     assert (listed["entry_id"], listed["title"], listed["state"]) == (
         entry.entry_id,
-        CAMERA_HOST,
+        MODEL,
         "loaded",
     )
+
+
+async def test_adding_by_ip_fills_the_identity_from_the_lan_search(hass, camera):
+    entry = await add_by_ip(hass, camera)
+
+    [device] = await hass.devices(entry.entry_id)
+    assert (device["model"], device["serial_number"]) == (MODEL, SERIAL)
+    assert device["connections"] == [["mac", MAC.lower()]]
 
 
 async def test_a_wrong_password_shows_invalid_auth(hass, camera):

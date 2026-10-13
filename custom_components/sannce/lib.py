@@ -25,6 +25,7 @@ from .sannce_aio import (
     SannceError,
     TalkBusyError,
     discover,
+    find_camera,
 )
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "TalkBusyError",
     "create_camera",
     "discover",
+    "find_camera",
 ]
 
 

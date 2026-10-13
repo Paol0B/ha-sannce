@@ -65,6 +65,14 @@ async def _async_probe(hass: HomeAssistant, data: Mapping[str, Any]) -> lib.Came
         await camera.close()
 
 
+async def _async_find(host: str) -> lib.DiscoveredCamera | None:
+    try:
+        return await lib.find_camera(host)
+    except OSError as err:
+        _LOGGER.debug("Searching the network for %s failed: %s", host, err)
+        return None
+
+
 def _label(camera: lib.DiscoveredCamera) -> str:
     return f"{camera.model or 'SANNCE'} ({camera.ip})"
 
@@ -91,6 +99,8 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
             except _ProbeError as err:
                 errors["base"] = str(err)
             else:
+                if host not in self._found and (camera := await _async_find(host)):
+                    self._found[host] = camera
                 return await self._async_create_entry(user_input, info)
         return self._show_user_form(user_input, errors)
 
