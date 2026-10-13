@@ -19,8 +19,8 @@ authInternalUsers:
       - action: publish
 paths:
   "1/1":
-    runOnInit: ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc=size=1280x720:rate=10 -f lavfi -i sine=frequency=440:sample_rate=48000 -c:v libx264 -preset ultrafast -tune zerolatency -g 10 -c:a aac -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInit: ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc=size=1280x720:rate=10 -f lavfi -i sine=frequency=440:sample_rate=48000 -c:v libx264 -pix_fmt yuv420p -preset ultrafast -tune zerolatency -g 10 -c:a aac -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
     runOnInitRestart: yes
   "1/2":
-    runOnInit: ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine=frequency=440:sample_rate=8000 -c:v libx264 -preset ultrafast -tune zerolatency -g 10 -c:a pcm_alaw -ar 8000 -ac 1 -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInit: ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine=frequency=440:sample_rate=8000 -c:v libx264 -pix_fmt yuv420p -preset ultrafast -tune zerolatency -g 10 -c:a pcm_alaw -ar 8000 -ac 1 -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
     runOnInitRestart: yes
