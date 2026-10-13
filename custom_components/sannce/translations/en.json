@@ -67,6 +67,11 @@
         "name": "Floodlight"
       }
     },
+    "media_player": {
+      "speaker": {
+        "name": "Speaker"
+      }
+    },
     "select": {
       "light_mode": {
         "name": "Light mode",
@@ -75,6 +80,11 @@
           "infrared": "Infrared",
           "smart": "Smart"
         }
+      }
+    },
+    "siren": {
+      "siren": {
+        "name": "Siren"
       }
     },
     "switch": {

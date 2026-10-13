@@ -35,6 +35,9 @@ class FakeSannceCamera:
         self.light_mode = "infrared"
         self.detection = lib.Detection(person=True, vehicle=True, motion=True)
         self.played: list[bytes] = []
+        self.talk_active = False
+        self.talk_starts = 0
+        self.talk_stops = 0
         self._subscribers: list[Callable[[lib.Event], None]] = []
         self._availability_callbacks: list[Callable[[bool], None]] = []
 
@@ -98,8 +101,14 @@ class FakeSannceCamera:
         )
 
     async def _play_audio(self, pcm: AsyncIterable[bytes]) -> None:
-        async for chunk in pcm:
-            self.played.append(chunk)
+        self.talk_active = True
+        self.talk_starts += 1
+        try:
+            async for chunk in pcm:
+                self.played.append(chunk)
+        finally:
+            self.talk_active = False
+            self.talk_stops += 1
 
 
 @pytest.fixture(autouse=True)

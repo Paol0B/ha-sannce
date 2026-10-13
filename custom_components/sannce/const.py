@@ -9,7 +9,9 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.CAMERA,
     Platform.LIGHT,
+    Platform.MEDIA_PLAYER,
     Platform.SELECT,
+    Platform.SIREN,
     Platform.SWITCH,
 ]
 

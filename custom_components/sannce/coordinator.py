@@ -10,6 +10,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import lib
+from .audio import AudioPlayer
 from .const import UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
             always_update=False,
         )
         self.camera = camera
+        self.audio = AudioPlayer(self)
         self.connected = False
         self._event_listeners: list[Callable[[lib.Event], None]] = []
         camera.on_availability(self._handle_availability)
