@@ -14,6 +14,7 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import translation
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sannce import audio, lib
@@ -182,6 +183,14 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
 def mock_media_components(hass: HomeAssistant) -> None:
     hass.config.components.add("ffmpeg")
     hass.config.components.add("stream")
+
+
+# without setup, a translated error reads as its key: messages come only
+# from the strings of loaded components
+@pytest.fixture
+async def translations(hass: HomeAssistant) -> None:
+    await translation.async_load_integrations(hass, {DOMAIN})
+    hass.config.components.add(DOMAIN)
 
 
 @pytest.fixture

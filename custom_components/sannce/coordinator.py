@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from . import lib
 from .audio import AudioPlayer
-from .const import UPDATE_INTERVAL
+from .const import DOMAIN, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,9 +75,17 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
                 ),
             )
         except lib.AuthError as err:
-            raise ConfigEntryAuthFailed(f"Login to {host} failed: {err}") from err
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN,
+                translation_key="login_failed",
+                translation_placeholders={"host": host, "error": str(err)},
+            ) from err
         except lib.SannceError as err:
-            raise UpdateFailed(f"Cannot read settings from {host}: {err}") from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="settings_read_failed",
+                translation_placeholders={"host": host, "error": str(err)},
+            ) from err
 
     @callback
     def _handle_availability(self, available: bool) -> None:

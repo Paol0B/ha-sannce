@@ -10,6 +10,8 @@ from homeassistant.components.media_player.browse_media import (
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+from .const import DOMAIN
+
 if TYPE_CHECKING:
     from .coordinator import SannceCoordinator
 
@@ -85,7 +87,11 @@ async def _ffmpeg_pcm(hass: HomeAssistant, media_id: str) -> AsyncIterator[bytes
         stderr = await errors
     if code := proc.returncode:
         detail = stderr.decode(errors="replace").strip() or f"exit code {code}"
-        raise HomeAssistantError(f"ffmpeg failed on {media_id}: {detail}")
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="ffmpeg_failed",
+            translation_placeholders={"media": media_id, "detail": detail},
+        )
 
 
 async def _bounded[T](step: Awaitable[T], media_id: str) -> T:
@@ -93,7 +99,12 @@ async def _bounded[T](step: Awaitable[T], media_id: str) -> T:
         return await asyncio.wait_for(step, _STALL_SECONDS)
     except TimeoutError:
         raise HomeAssistantError(
-            f"ffmpeg stalled for {_STALL_SECONDS} s on {media_id}"
+            translation_domain=DOMAIN,
+            translation_key="ffmpeg_stalled",
+            translation_placeholders={
+                "seconds": str(_STALL_SECONDS),
+                "media": media_id,
+            },
         ) from None
 
 

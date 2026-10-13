@@ -54,6 +54,29 @@
       "reauth_successful": "Password updated."
     }
   },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "Cannot connect to {host}: {error}"
+    },
+    "command_failed": {
+      "message": "Cannot update {entity_id}: {error}"
+    },
+    "ffmpeg_failed": {
+      "message": "ffmpeg failed on {media}: {detail}"
+    },
+    "ffmpeg_stalled": {
+      "message": "ffmpeg stalled for {seconds} s on {media}"
+    },
+    "login_failed": {
+      "message": "Login to {host} failed: {error}"
+    },
+    "play_failed": {
+      "message": "Cannot play media on {entity_id}: {error}"
+    },
+    "settings_read_failed": {
+      "message": "Cannot read settings from {host}: {error}"
+    }
+  },
   "entity": {
     "binary_sensor": {
       "intrusion": {
