@@ -109,6 +109,9 @@
     },
     "settings_read_failed": {
       "message": "Cannot read settings from {host}: {error}"
+    },
+    "siren_failed": {
+      "message": "Cannot sound {entity_id}: {error}"
     }
   },
   "entity": {

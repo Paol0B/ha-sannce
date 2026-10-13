@@ -186,6 +186,7 @@ data:
 - **Entities are unavailable.** The camera connection dropped. The log says `Camera IP is unavailable`. The integration keeps retrying and waits up to 60 seconds between tries.
 - **A rule sensor never turns on.** Intrusion, Line crossing, Tamper and Video loss start disabled. The camera may also never send those events.
 - **The speaker stays silent.** It needs the `ffmpeg` binary. The log names the ffmpeg error.
+- **The siren will not start.** The service call fails with the camera's reason, for example that it refused talk. A failure after the tone has started only appears in the log.
 
 For more detail, turn on debug logging in `configuration.yaml`:
 
@@ -205,7 +206,7 @@ When you report a problem, attach the diagnostics file from the device page. It 
 
 ## Quality scale
 
-The integration meets the Home Assistant integration quality scale up to Platinum, except two rules that need publication: brands and dependency-transparency. Home Assistant grades only core integrations, so there is no official badge. [custom_components/sannce/quality_scale.yaml](custom_components/sannce/quality_scale.yaml) gives the status of every rule.
+The integration marks every rule of the Home Assistant integration quality scale, up to Platinum, as done or exempt, except two rules that need publication: brands and dependency-transparency. Hassfest checks seven of the rules. The others rest on the file, the tests and mypy. Home Assistant grades only core integrations, so there is no official badge. [custom_components/sannce/quality_scale.yaml](custom_components/sannce/quality_scale.yaml) gives the status of every rule.
 
 ## Live push-to-talk
 
@@ -266,7 +267,7 @@ Run the tests from the repository root.
 
 The Home Assistant pytest plugin blocks sockets, so the library tests run without it.
 
-`scripts/quality.sh` runs mypy, the unit tests with at least 95 % line coverage per module, and hassfest's quality scale check. Hassfest checks `quality_scale.yaml` only for core integrations, so the script copies the integration into the hassfest image as a core integration that declares Platinum. It passes when hassfest reports only brands and dependency-transparency. It needs Docker.
+`scripts/quality.sh` runs mypy, the unit tests with at least 95 % line coverage per module, and hassfest's quality scale check. Hassfest checks `quality_scale.yaml` only for core integrations, so the script copies the integration into the hassfest image as a core integration that declares Platinum. It passes when hassfest reports only brands and dependency-transparency, and `quality_scale.yaml` matches its tests. It needs Docker.
 
 To try the library alone against a camera, run `python -m sannce_aio probe HOST --pass PASSWORD` after the install above. It switches the white light on and back unless you add `--no-light`.
 

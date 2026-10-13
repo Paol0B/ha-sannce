@@ -71,8 +71,8 @@ if ! grep -qx "Integrations: 1" <<<"$output"; then
   exit 1
 fi
 reported=$(sed -n '/^Integration sannce/,/^$/p' <<<"$output" | sed '1d;/^$/d')
-if [[ -n $reported && $reported != "$publication_only" ]]; then
-  echo "error: hassfest reports rules beyond brands and dependency-transparency" >&2
+if [[ $reported != "$publication_only" ]]; then
+  echo "error: hassfest must report exactly brands and dependency-transparency" >&2
   exit 1
 fi
-echo "quality scale: Platinum except the publication rules"
+echo "quality scale: yaml consistent, no hassfest errors beyond the publication rules"

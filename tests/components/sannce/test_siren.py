@@ -17,13 +17,16 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sannce import lib
+from custom_components.sannce import siren as sannce_siren
 from custom_components.sannce.audio import SAMPLE_RATE, SAMPLE_WIDTH
 from custom_components.sannce.const import DOMAIN
 from custom_components.sannce.siren import (
+    _AMPLITUDE,
     _CHUNK_BYTES,
     _TONES,
     _tone_chunks,
@@ -215,7 +218,7 @@ async def test_no_siren_without_the_talk_cap(
 def test_tone_is_little_endian_pcm() -> None:
     _tone_cycle.cache_clear()
     cycle = _tone_cycle("alarm")
-    peak = int(32767 * 0.6)
+    peak = int(32767 * _AMPLITUDE)
 
     samples = struct.unpack(f"<{len(cycle) // SAMPLE_WIDTH}h", cycle)
 
@@ -223,7 +226,9 @@ def test_tone_is_little_endian_pcm() -> None:
         int(peak * math.sin(2 * math.pi * 800.0 * n / SAMPLE_RATE)) for n in range(4)
     )
     # the second segment, 0.25 s in, plays 1000 Hz
-    assert samples[2001] == int(peak * math.sin(2 * math.pi * 1000.0 * 2001 / 8000))
+    assert samples[2001] == int(
+        peak * math.sin(2 * math.pi * 1000.0 * 2001 / SAMPLE_RATE)
+    )
 
 
 async def test_removing_the_siren_while_it_plays_stops_the_tone(
@@ -255,7 +260,37 @@ async def test_removing_the_siren_while_it_plays_stops_the_tone(
     release.set()
 
 
-async def test_a_failed_tone_turns_the_siren_off_and_logs_once(
+async def test_turn_on_waits_for_the_camera_to_take_the_tone(
+    hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
+) -> None:
+    accept = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow(pcm: AsyncIterable[bytes]) -> None:
+        await accept.wait()
+        mock_camera.talk_active = True
+        try:
+            async for _ in pcm:
+                await release.wait()
+        finally:
+            mock_camera.talk_active = False
+
+    mock_camera.play_audio.side_effect = slow
+    call = hass.async_create_task(turn_on(hass, siren, duration=5))
+
+    await asyncio.sleep(0.05)
+    assert not call.done()
+    assert hass.states.get(siren).state == STATE_OFF
+
+    accept.set()
+    await call
+
+    assert hass.states.get(siren).state == STATE_ON
+    assert mock_camera.talk_active is True
+    release.set()
+
+
+async def test_a_refused_start_fails_the_service_call(
     hass: HomeAssistant,
     siren: str,
     mock_camera: FakeSannceCamera,
@@ -263,8 +298,65 @@ async def test_a_failed_tone_turns_the_siren_off_and_logs_once(
 ) -> None:
     mock_camera.play_audio.side_effect = lib.TalkBusyError("talk is already active")
 
+    with pytest.raises(HomeAssistantError) as raised:
+        await turn_on(hass, siren, duration=1)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert raised.value.translation_key == "siren_failed"
+    assert str(raised.value) == f"Cannot sound {siren}: talk is already active"
+    assert hass.states.get(siren).state == STATE_OFF
+    assert "siren playback failed" not in caplog.text
+
+
+async def test_an_unanswered_start_times_out_and_stops_the_talk(
+    hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
+) -> None:
+    async def stall(pcm: AsyncIterable[bytes]) -> None:
+        mock_camera.talk_active = True
+        try:
+            await asyncio.Event().wait()
+        finally:
+            mock_camera.talk_active = False
+
+    mock_camera.play_audio.side_effect = stall
+
+    with (
+        patch.object(sannce_siren, "_START_SECONDS", 0.05),
+        pytest.raises(HomeAssistantError) as raised,
+    ):
+        await turn_on(hass, siren, duration=1)
+
+    assert raised.value.translation_key == "siren_failed"
+    assert str(raised.value) == f"Cannot sound {siren}: no answer in 0.05 s"
+    assert mock_camera.talk_active is False
+    assert hass.states.get(siren).state == STATE_OFF
+
+
+async def test_a_failure_after_the_start_only_logs(
+    hass: HomeAssistant,
+    siren: str,
+    mock_camera: FakeSannceCamera,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def drop(pcm: AsyncIterable[bytes]) -> None:
+        async for _ in pcm:
+            raise lib.ConnectError("audio send failed")
+
+    mock_camera.play_audio.side_effect = drop
+
     await turn_on(hass, siren, duration=1)
     await hass.async_block_till_done(wait_background_tasks=True)
 
     assert hass.states.get(siren).state == STATE_OFF
-    assert caplog.text.count("siren playback failed: talk is already active") == 1
+    assert caplog.text.count("siren playback failed: audio send failed") == 1
+
+
+async def test_turn_on_returns_when_the_play_ends_before_the_tone_starts(
+    hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
+) -> None:
+    mock_camera.play_audio.side_effect = None
+
+    await turn_on(hass, siren, duration=1)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert hass.states.get(siren).state == STATE_OFF

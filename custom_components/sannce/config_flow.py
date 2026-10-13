@@ -303,6 +303,7 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="already_configured")
         await self.async_set_unique_id(entry.unique_id)
         self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        # the helper returns, not aborts, when the entry has no unique id
         return self.async_abort(reason="already_configured")
 
     def _conflict(self, entry: ConfigEntry, identity: Mapping[str, str]) -> str | None:

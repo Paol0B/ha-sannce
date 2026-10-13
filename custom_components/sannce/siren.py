@@ -13,9 +13,12 @@ from homeassistant.components.siren import (
 )
 from homeassistant.components.siren.const import ATTR_DURATION, ATTR_TONE
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from . import lib
 from .audio import SAMPLE_RATE, SAMPLE_WIDTH
+from .const import DOMAIN
 from .coordinator import SannceConfigEntry, SannceCoordinator
 from .entity import SannceEntity
 
@@ -31,6 +34,8 @@ _TONES: dict[str, tuple[tuple[float, float], float]] = {
 _DEFAULT_TONE = "alarm"
 _DEFAULT_DURATION = 10
 _MAX_DURATION = 300
+# the library gives up on talk start after 10 s; this only backstops it
+_START_SECONDS = 15
 _AMPLITUDE = 0.6
 _CHUNK_BYTES = SAMPLE_RATE // 10 * SAMPLE_WIDTH
 
@@ -57,6 +62,15 @@ async def _tone_chunks(duration: int, tone: str) -> AsyncIterator[bytes]:
         for start in range(0, min(left, len(cycle)), _CHUNK_BYTES):
             yield cycle[start : min(start + _CHUNK_BYTES, left)]
         left -= len(cycle)
+
+
+async def _announce_start(
+    chunks: AsyncIterator[bytes], started: asyncio.Future[None]
+) -> AsyncIterator[bytes]:
+    async for chunk in chunks:
+        if not started.done():
+            started.set_result(None)
+        yield chunk
 
 
 async def async_setup_entry(
@@ -88,11 +102,25 @@ class SannceSiren(SannceEntity, SirenEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         duration = min(kwargs.get(ATTR_DURATION) or _DEFAULT_DURATION, _MAX_DURATION)
         tone = kwargs.get(ATTR_TONE) or _DEFAULT_TONE
-        self._task = self.coordinator.config_entry.async_create_background_task(
-            self.hass, self._sound(duration, tone), "sannce siren"
+        started: asyncio.Future[None] = self.hass.loop.create_future()
+        self._task = task = self.coordinator.config_entry.async_create_background_task(
+            self.hass, self._sound(duration, tone, started), "sannce siren"
         )
-        self._task.add_done_callback(self._finished)
-        self._attr_is_on = True
+        task.add_done_callback(self._finished)
+        try:
+            async with asyncio.timeout(_START_SECONDS):
+                await started
+        except (lib.SannceError, TimeoutError) as err:
+            await self.coordinator.audio.stop()
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="siren_failed",
+                translation_placeholders={
+                    "entity_id": self.entity_id,
+                    "error": str(err) or f"no answer in {_START_SECONDS} s",
+                },
+            ) from err
+        self._attr_is_on = not task.done()
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -106,8 +134,20 @@ class SannceSiren(SannceEntity, SirenEntity):
             self._task = None
             await self.coordinator.audio.stop()
 
-    async def _sound(self, duration: int, tone: str) -> None:
-        await self.coordinator.audio.play(_tone_chunks(duration, tone))
+    async def _sound(
+        self, duration: int, tone: str, started: asyncio.Future[None]
+    ) -> None:
+        chunks = _announce_start(_tone_chunks(duration, tone), started)
+        try:
+            await self.coordinator.audio.play(chunks)
+        except Exception as err:
+            if started.done():
+                raise
+            started.set_exception(err)
+        finally:
+            # stopped or superseded before the camera took the tone
+            if not started.done():
+                started.set_result(None)
 
     def _finished(self, task: asyncio.Task[None]) -> None:
         if task is not self._task:
