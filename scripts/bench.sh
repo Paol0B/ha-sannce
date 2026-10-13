@@ -23,6 +23,13 @@ USAGE
   exit 2
 }
 
+need_python() {
+  if [[ ! -x "$python" ]]; then
+    echo "error: $python is missing; set up .venv as README.md, Development, says" >&2
+    exit 1
+  fi
+}
+
 start() {
   "$here/vendor-lib.sh"
   mkdir -p "$bench/media"
@@ -63,17 +70,13 @@ run_suite() {
 [[ $# -ge 1 ]] || usage
 command=$1
 shift
-if [[ ! -x "$python" ]]; then
-  echo "error: $python is missing; set up .venv as README.md, Development, says" >&2
-  exit 1
-fi
 case $command in
-  up) [[ $# -eq 0 ]] || usage; start ;;
+  up) [[ $# -eq 0 ]] || usage; need_python; start ;;
   down) [[ $# -eq 0 ]] || usage; "${compose[@]}" down ;;
-  reset) [[ $# -eq 0 ]] || usage; wipe; start ;;
-  test) [[ $# -eq 0 ]] || usage; run_suite ;;
-  event) [[ $# -ge 1 && $# -le 2 ]] || usage; "$python" "$client" event "$@" ;;
-  audio) [[ $# -eq 1 ]] || usage; "$python" "$client" audio "$1" ;;
+  reset) [[ $# -eq 0 ]] || usage; need_python; wipe; start ;;
+  test) [[ $# -eq 0 ]] || usage; need_python; run_suite ;;
+  event) [[ $# -ge 1 && $# -le 2 ]] || usage; need_python; "$python" "$client" event "$@" ;;
+  audio) [[ $# -eq 1 ]] || usage; need_python; "$python" "$client" audio "$1" ;;
   hassfest) [[ $# -eq 0 ]] || usage; run_hassfest ;;
   *) usage ;;
 esac

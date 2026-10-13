@@ -65,7 +65,10 @@ class HassClient:
 
     async def sign_in(self, timeout: float = START_TIMEOUT) -> None:
         await wait_for(
-            self._try_sign_in, bool, timeout, f"signing in to {self._url} as {OWNER}"
+            self._try_sign_in,
+            lambda problem: problem is None,
+            timeout,
+            f"signing in to {self._url} as {OWNER}",
         )
         await self._finish_onboarding()
         await wait_for(
@@ -97,9 +100,8 @@ class HassClient:
 
     async def command(self, message: dict[str, Any]) -> Any:
         async with self._ws_lock:
-            ws = await self._websocket()
             message_id = next(self._ids)
-            await ws.send_json({"id": message_id, **message})
+            ws = await self._send({"id": message_id, **message})
             while True:
                 reply = await ws.receive_json(timeout=TIMEOUT.total)
                 if reply.get("id") == message_id and reply.get("type") == "result":
@@ -194,7 +196,7 @@ class HassClient:
         reply = await self.command({"type": "camera/stream", "entity_id": entity_id})
         return reply["url"]
 
-    async def _try_sign_in(self) -> bool:
+    async def _try_sign_in(self) -> str | None:
         # 404s and refused connections mean Home Assistant is still starting
         try:
             async with self._session.get(f"{self._url}/auth/providers") as response:
@@ -202,10 +204,12 @@ class HassClient:
                 body = await response.json(content_type=None) if status == 400 else {}
             if status == 400 and body.get("code") == "onboarding_required":
                 await self._create_owner()
-                return True
-            return status == 200 and await self._log_in()
-        except (aiohttp.ClientError, TimeoutError, BenchError):
-            return False
+                return None
+            if status != 200:
+                return f"HTTP {status} from /auth/providers"
+            return None if await self._log_in() else "login refused"
+        except (aiohttp.ClientError, TimeoutError, BenchError) as exc:
+            return _cause(exc)
 
     async def _create_owner(self) -> None:
         reply = await self.request(
@@ -269,9 +273,23 @@ class HassClient:
     async def _config_state(self) -> str:
         return (await self.request("GET", "/api/config"))["state"]
 
+    async def _send(self, frame: dict[str, Any]) -> aiohttp.ClientWebSocketResponse:
+        ws = await self._websocket()
+        try:
+            await ws.send_json(frame)
+        except aiohttp.ClientConnectionResetError:
+            # the socket died while idle and nothing was sent, so send again
+            await ws.close()
+            ws = await self._websocket()
+            await ws.send_json(frame)
+        return ws
+
     async def _websocket(self) -> aiohttp.ClientWebSocketResponse:
         if self._ws is None or self._ws.closed:
-            ws = await self._session.ws_connect(self._url + "/api/websocket")
+            # an idle socket never answers Home Assistant's 55 s ping: ping sooner
+            ws = await self._session.ws_connect(
+                self._url + "/api/websocket", heartbeat=30
+            )
             await ws.receive_json(timeout=TIMEOUT.total)
             await ws.send_json({"type": "auth", "access_token": self._token})
             reply = await ws.receive_json(timeout=TIMEOUT.total)
@@ -359,6 +377,10 @@ async def _check(response: aiohttp.ClientResponse) -> None:
         )
 
 
+def _cause(exc: BaseException) -> str:
+    return str(exc) or type(exc).__name__
+
+
 async def _setup(session: aiohttp.ClientSession, args: argparse.Namespace) -> None:
     hass = HassClient(session)
     try:
@@ -420,7 +442,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         asyncio.run(_run(args))
     except (BenchError, aiohttp.ClientError, TimeoutError, OSError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"error: {_cause(exc)}", file=sys.stderr)
         return 1
     return 0
 
