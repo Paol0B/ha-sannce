@@ -62,7 +62,7 @@ class SannceDetectionSwitch(SannceSettingsEntity, SwitchEntity):
         detection = self.coordinator.data.detection
         if detection is None:
             return None
-        return getattr(detection, self.entity_description.kind)
+        return bool(getattr(detection, self.entity_description.kind))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._async_set(True)

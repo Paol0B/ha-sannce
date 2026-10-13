@@ -15,6 +15,7 @@ from sannce_aio.discovery import (
     build_seek_reply,
     build_seek_request,
     discover,
+    find_camera,
     is_seek_request,
     parse_discovery_reply,
 )
@@ -546,5 +547,106 @@ async def test_discover_closes_socket_when_cancelled(serve, aim):
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+    assert port_free(SOURCE_PORT)
+
+
+@pytest.fixture
+def ask(monkeypatch):
+    def set_ports(*ports):
+        monkeypatch.setattr(discovery, "SEARCH_PORTS", ports)
+
+    return set_ports
+
+
+@pytest.mark.asyncio
+async def test_find_camera_asks_the_address_itself(
+    serve, aim, ask, examples, reply_fields
+):
+    responder = await serve(datagram(edit(reply_fields, {32: ""})))
+    aim()
+    ask(responder.address[1])
+
+    found = await find_camera("127.0.0.1", timeout=WAIT)
+
+    assert found is not None
+    assert (found.ip, found.serial) == ("127.0.0.1", reply_fields[24])
+    assert responder.requests == [raw(examples, REQUEST)]
+
+
+@pytest.mark.asyncio
+async def test_find_camera_also_searches_the_groups(serve, aim, ask, reply_fields):
+    responder = await serve(datagram(edit(reply_fields, {32: "127.0.0.1"})))
+    aim(responder.address)
+    ask()
+
+    found = await find_camera("127.0.0.1", timeout=WAIT)
+
+    assert found is not None
+    assert found.ip == "127.0.0.1"
+
+
+@pytest.mark.asyncio
+async def test_find_camera_returns_at_the_first_answer(serve, aim, ask, reply_fields):
+    responder = await serve(datagram(edit(reply_fields, {32: ""})))
+    aim()
+    ask(responder.address[1])
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    assert await find_camera("127.0.0.1", timeout=5) is not None
+    assert loop.time() - started < 1
+
+
+@pytest.mark.asyncio
+async def test_find_camera_ignores_other_cameras(serve, aim, ask, reply_fields):
+    responder = await serve(datagram(edit(reply_fields, {32: "192.168.1.11"})))
+    aim(responder.address)
+    ask()
+
+    assert await find_camera("127.0.0.1", timeout=WAIT) is None
+
+
+@pytest.mark.asyncio
+async def test_find_camera_skips_a_host_name(monkeypatch):
+    def refuse():
+        raise AssertionError("a host name needs no socket")
+
+    monkeypatch.setattr(discovery, "_open_socket", refuse)
+
+    assert await find_camera("camera.local") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", [True, False], ids=["match", "timeout"])
+async def test_find_camera_frees_port_6001(serve, aim, ask, reply_fields, answer):
+    if not port_free(SOURCE_PORT):
+        pytest.skip("port 6001 is in use")
+    replies = [datagram(edit(reply_fields, {32: ""}))] if answer else []
+    responder = await serve(*replies)
+    aim()
+    ask(responder.address[1])
+
+    found = await find_camera("127.0.0.1", timeout=WAIT)
+
+    assert (found is not None) is answer
+    assert [port for _, port in responder.sources] == [SOURCE_PORT]
+    assert port_free(SOURCE_PORT)
+
+
+@pytest.mark.asyncio
+async def test_find_camera_frees_port_6001_when_cancelled(serve, aim, ask):
+    if not port_free(SOURCE_PORT):
+        pytest.skip("port 6001 is in use")
+    responder = await serve()
+    aim()
+    ask(responder.address[1])
+
+    search = asyncio.create_task(find_camera("127.0.0.1", timeout=30))
+    await asyncio.sleep(WAIT)
+    assert not port_free(SOURCE_PORT)
+    search.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await search
 
     assert port_free(SOURCE_PORT)

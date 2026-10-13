@@ -3,7 +3,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from . import lib
-from .const import PLATFORMS
+from .const import DOMAIN, PLATFORMS
 from .coordinator import SannceConfigEntry, SannceCoordinator
 
 
@@ -15,9 +15,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: SannceConfigEntry) -> bo
     try:
         await camera.connect()
     except lib.AuthError as err:
-        raise ConfigEntryAuthFailed(f"Login to {host} failed: {err}") from err
+        raise ConfigEntryAuthFailed(
+            translation_domain=DOMAIN,
+            translation_key="login_failed",
+            translation_placeholders={"host": host, "error": str(err)},
+        ) from err
     except lib.SannceError as err:
-        raise ConfigEntryNotReady(f"Cannot connect to {host}: {err}") from err
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="cannot_connect",
+            translation_placeholders={"host": host, "error": str(err)},
+        ) from err
 
     entry.async_on_unload(camera.close)
     await coordinator.async_config_entry_first_refresh()

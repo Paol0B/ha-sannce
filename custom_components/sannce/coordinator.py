@@ -3,7 +3,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from . import lib
 from .audio import AudioPlayer
-from .const import UPDATE_INTERVAL
+from .const import DOMAIN, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,19 +75,38 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
                 ),
             )
         except lib.AuthError as err:
-            raise ConfigEntryAuthFailed(f"Login to {host} failed: {err}") from err
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN,
+                translation_key="login_failed",
+                translation_placeholders={"host": host, "error": str(err)},
+            ) from err
         except lib.SannceError as err:
-            raise UpdateFailed(f"Cannot read settings from {host}: {err}") from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="settings_read_failed",
+                translation_placeholders={"host": host, "error": str(err)},
+            ) from err
 
     @callback
     def _handle_availability(self, available: bool) -> None:
+        was_connected = self.connected
         self.connected = available
         self.async_update_listeners()
-        # setup runs the first poll itself
-        if available and self.data is not None:
-            self.config_entry.async_create_background_task(
-                self.hass, self.async_request_refresh(), "sannce reconnect refresh"
-            )
+        # setup runs the first poll itself, and unload closes the camera on purpose
+        if (
+            available == was_connected
+            or self.data is None
+            or self.config_entry.state is not ConfigEntryState.LOADED
+        ):
+            return
+        host = self.config_entry.data[CONF_HOST]
+        if not available:
+            _LOGGER.info("Camera %s is unavailable", host)
+            return
+        _LOGGER.info("Camera %s is back online", host)
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_request_refresh(), "sannce reconnect refresh"
+        )
 
     @callback
     def _handle_login_failed(self, error: lib.AuthError) -> None:

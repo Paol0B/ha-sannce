@@ -9,7 +9,7 @@ from typing import TextIO
 
 from .camera import SannceCamera
 from .control import start_control
-from .discovery import discover
+from .discovery import SEARCH_PORTS, discover
 from .errors import SannceError
 from .events import Event
 from .simulator import (
@@ -17,7 +17,6 @@ from .simulator import (
     DEFAULT_MODEL,
     DEFAULT_SERIAL,
     MAC_SHAPE,
-    SEARCH_PORTS,
     CameraSimulator,
 )
 
@@ -25,7 +24,7 @@ _EXIT_FAILED = 1
 _EXIT_INTERRUPTED = 130
 _MAX_PORT = 65535
 
-_Emit = Callable[[dict | None, str], None]
+_Emit = Callable[[dict[str, object] | None, str], None]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -213,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
 def _emitter(out: TextIO | None, as_json: bool) -> _Emit:
     stream = sys.stdout if out is None else out
 
-    def emit(record: dict | None, text: str) -> None:
+    def emit(record: dict[str, object] | None, text: str) -> None:
         if as_json and record is None:
             return
         print(json.dumps(record) if as_json else text, file=stream, flush=True)
@@ -259,7 +258,7 @@ async def _wait(duration: float | None) -> None:
         await asyncio.sleep(duration)
 
 
-def _pairs(fields: dict) -> str:
+def _pairs(fields: dict[str, object]) -> str:
     return " ".join(f"{name}={value or 'unknown'}" for name, value in fields.items())
 
 

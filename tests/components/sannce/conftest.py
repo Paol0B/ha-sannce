@@ -3,7 +3,7 @@ import sys
 import types
 from collections.abc import AsyncIterable, Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager, suppress
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from homeassistant.const import (
@@ -14,6 +14,7 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import translation
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sannce import audio, lib
@@ -184,6 +185,24 @@ def mock_media_components(hass: HomeAssistant) -> None:
     hass.config.components.add("stream")
 
 
+# without setup, a translated error reads as its key: messages come only
+# from the strings of loaded components
+@pytest.fixture
+async def translations(hass: HomeAssistant) -> None:
+    await translation.async_load_integrations(hass, {DOMAIN})
+    hass.config.components.add(DOMAIN)
+
+
+@pytest.fixture
+def entity_registry_enabled_by_default() -> Generator[None]:
+    with patch(
+        "homeassistant.helpers.entity.Entity.entity_registry_enabled_default",
+        new_callable=PropertyMock,
+        return_value=True,
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_config_entry() -> MockConfigEntry:
     return MockConfigEntry(
@@ -209,6 +228,15 @@ def identified_entry() -> MockConfigEntry:
             CONF_MAC: "AA-BB-CC-DD-EE-FF",
         },
     )
+
+
+# the HA test plugin blocks sockets, so every flow that searches needs this
+@pytest.fixture
+def mock_find_camera() -> Generator[AsyncMock]:
+    with patch(
+        "custom_components.sannce.lib.find_camera", AsyncMock(return_value=None)
+    ) as find_camera:
+        yield find_camera
 
 
 @pytest.fixture

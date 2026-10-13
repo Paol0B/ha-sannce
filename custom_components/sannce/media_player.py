@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import lib
 from .audio import play_media_to_camera
+from .const import DOMAIN
 from .coordinator import SannceConfigEntry, SannceCoordinator
 from .entity import SannceEntity
 
@@ -63,7 +64,12 @@ class SannceSpeaker(SannceEntity, MediaPlayerEntity):
             )
         except lib.SannceError as err:
             raise HomeAssistantError(
-                f"Cannot play media on {self.entity_id}: {err}"
+                translation_domain=DOMAIN,
+                translation_key="play_failed",
+                translation_placeholders={
+                    "entity_id": self.entity_id,
+                    "error": str(err),
+                },
             ) from err
         finally:
             # a superseded play wakes first; only the latest play may go idle

@@ -1,0 +1,52 @@
+{
+  "entity": {
+    "camera": {
+      "main": {
+        "default": "mdi:cctv"
+      },
+      "sub": {
+        "default": "mdi:cctv"
+      }
+    },
+    "light": {
+      "floodlight": {
+        "default": "mdi:light-flood-down"
+      }
+    },
+    "select": {
+      "light_mode": {
+        "default": "mdi:theme-light-dark",
+        "state": {
+          "color": "mdi:palette",
+          "infrared": "mdi:weather-night",
+          "smart": "mdi:lightbulb-auto"
+        }
+      }
+    },
+    "siren": {
+      "siren": {
+        "default": "mdi:alarm-light"
+      }
+    },
+    "switch": {
+      "motion_detection": {
+        "default": "mdi:motion-sensor",
+        "state": {
+          "off": "mdi:motion-sensor-off"
+        }
+      },
+      "person_detection": {
+        "default": "mdi:account-search",
+        "state": {
+          "off": "mdi:account-off"
+        }
+      },
+      "vehicle_detection": {
+        "default": "mdi:car-search",
+        "state": {
+          "off": "mdi:car-off"
+        }
+      }
+    }
+  }
+}

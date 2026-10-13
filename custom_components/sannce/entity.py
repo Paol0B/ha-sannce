@@ -52,6 +52,13 @@ class SannceSettingsEntity(SannceEntity):
         try:
             await command
         except lib.SannceError as err:
-            raise HomeAssistantError(f"Cannot update {self.entity_id}: {err}") from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="command_failed",
+                translation_placeholders={
+                    "entity_id": self.entity_id,
+                    "error": str(err),
+                },
+            ) from err
         # not async_request_refresh: its 10 s cooldown would leave stale state
         await self.coordinator.async_refresh()

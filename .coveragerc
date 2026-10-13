@@ -1,0 +1,2 @@
+[run]
+omit = custom_components/sannce/sannce_aio/*

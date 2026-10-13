@@ -162,10 +162,15 @@ class HassClient:
         for entry in await self.entries():
             await self.remove_entry(entry["entry_id"])
 
-    async def start_flow(self) -> dict[str, Any]:
-        return await self.request(
-            "POST", "/api/config/config_entries/flow", {"handler": DOMAIN}
+    async def reload_entry(self, entry_id: str) -> None:
+        await self.request(
+            "POST", f"/api/config/config_entries/entry/{entry_id}/reload"
         )
+
+    async def start_flow(self, entry_id: str | None = None) -> dict[str, Any]:
+        # an entry id makes it a reconfigure flow for that entry
+        payload = {"handler": DOMAIN} | ({"entry_id": entry_id} if entry_id else {})
+        return await self.request("POST", "/api/config/config_entries/flow", payload)
 
     async def configure_flow(
         self, flow_id: str, data: dict[str, Any]
@@ -191,6 +196,15 @@ class HassClient:
             for item in registry
             if item["config_entry_id"] == entry_id
         }
+
+    async def enable_entity(self, entity_id: str) -> None:
+        await self.command(
+            {
+                "type": "config/entity_registry/update",
+                "entity_id": entity_id,
+                "disabled_by": None,
+            }
+        )
 
     async def devices(self, entry_id: str) -> list[dict[str, Any]]:
         registry = await self.command({"type": "config/device_registry/list"})

@@ -1,4 +1,6 @@
+import logging
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from freezegun.api import FrozenDateTimeFactory
@@ -14,11 +16,12 @@ from custom_components.sannce import lib
 from custom_components.sannce.const import UPDATE_INTERVAL
 from custom_components.sannce.coordinator import SannceCoordinator, SannceData
 
-from . import setup_integration
+from . import HOST, setup_integration
 from .conftest import ALL_CAPS, FakeSannceCamera
 
 MOTION_ON = lib.Event("motion", True, 0)
 MOTION_OFF = lib.Event("motion", False, 0)
+LOGGER = "custom_components.sannce.coordinator"
 
 
 @pytest.fixture
@@ -331,3 +334,53 @@ async def test_unload_drops_the_event_subscription(
 
     assert seen == []
     mock_camera.close.assert_awaited_once()
+
+
+def availability_log(caplog: pytest.LogCaptureFixture) -> list[tuple[int, str]]:
+    return [
+        (record.levelno, record.getMessage())
+        for record in caplog.records
+        if record.name == LOGGER and record.getMessage().startswith("Camera ")
+    ]
+
+
+async def test_a_drop_and_a_return_log_once_each(
+    hass: HomeAssistant,
+    coordinator: SannceCoordinator,
+    mock_camera: FakeSannceCamera,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER)
+
+    with patch.object(
+        coordinator, "async_request_refresh", wraps=coordinator.async_request_refresh
+    ) as refresh:
+        mock_camera.set_available(False)
+        mock_camera.set_available(False)
+        mock_camera.set_available(True)
+        mock_camera.set_available(True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert availability_log(caplog) == [
+        (logging.INFO, f"Camera {HOST} is unavailable"),
+        (logging.INFO, f"Camera {HOST} is back online"),
+    ]
+    # the debouncer would hide a second request from the poll count
+    refresh.assert_awaited_once()
+    assert mock_camera.get_light.await_count == 2
+
+
+async def test_setup_and_unload_log_no_availability_change(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER)
+
+    await setup_integration(hass, mock_config_entry)
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    mock_camera.close.assert_awaited_once()
+    assert availability_log(caplog) == []

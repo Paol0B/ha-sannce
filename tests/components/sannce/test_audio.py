@@ -260,6 +260,7 @@ LONG_STDERR = b"x" * 5000 + b"Bad header"
     ],
     ids=["stderr", "silent", "long"],
 )
+@pytest.mark.usefixtures("translations")
 async def test_ffmpeg_failure_raises(
     hass: HomeAssistant, stderr: bytes, detail: str
 ) -> None:
@@ -308,6 +309,7 @@ async def test_stopping_a_play_kills_ffmpeg_quietly(
 
 
 @pytest.mark.parametrize("stdout_closed", [False, True], ids=["silent", "no_exit"])
+@pytest.mark.usefixtures("translations")
 async def test_stalled_ffmpeg_is_killed(
     hass: HomeAssistant, stdout_closed: bool
 ) -> None:
@@ -318,7 +320,9 @@ async def test_stalled_ffmpeg_is_killed(
     with (
         ffmpeg_running(proc),
         patch.object(audio, "_STALL_SECONDS", 0.01),
-        pytest.raises(HomeAssistantError, match="ffmpeg stalled"),
+        pytest.raises(
+            HomeAssistantError, match="ffmpeg stalled for 0.01 s on http://host/stuck"
+        ),
     ):
         async with asyncio.timeout(10):
             await drain(audio._ffmpeg_pcm(hass, "http://host/stuck.mp3"))

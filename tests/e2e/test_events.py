@@ -1,8 +1,20 @@
 import asyncio
 
 import pytest
+import pytest_asyncio
 
 from bench.hass_client import EVENT_KINDS
+
+RULE_KINDS = ("intrusion", "line", "tamper", "video_loss")
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="session", autouse=True)
+async def rule_sensors(hass, entry):
+    for kind in RULE_KINDS:
+        await hass.enable_entity(entry.entity_ids[kind])
+    # Home Assistant reloads the entry 30 s after the last entity is enabled
+    for kind in RULE_KINDS:
+        await hass.wait_available(entry.entity_ids[kind], timeout=60)
 
 
 @pytest.mark.parametrize("kind", EVENT_KINDS)

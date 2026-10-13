@@ -1,5 +1,6 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "Add a SANNCE camera",
@@ -31,6 +32,38 @@
           "host": "Cameras found on your network."
         }
       },
+      "reconfigure": {
+        "title": "Change the camera connection",
+        "description": "Change the address, login or ports. Leave the password empty to keep the current one.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password",
+          "nvs_port": "Private protocol port",
+          "http_port": "HTTP port",
+          "rtsp_port": "RTSP port"
+        },
+        "data_description": {
+          "host": "IP address or host name of the camera.",
+          "username": "Login name of the camera.",
+          "password": "New password of the camera login. Empty keeps the current one.",
+          "nvs_port": "Used for events and the speaker.",
+          "http_port": "Used for settings such as the light and detection.",
+          "rtsp_port": "Used for the video streams."
+        }
+      },
+      "dhcp_confirm": {
+        "title": "Add the discovered camera",
+        "description": "Home Assistant found {name} on your network. Enter its login.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "Login name of the camera.",
+          "password": "Password of the camera login."
+        }
+      },
       "reauth_confirm": {
         "title": "Sign in again",
         "description": "Login to {host} failed. Enter the new password for {username}.",
@@ -51,7 +84,34 @@
     },
     "abort": {
       "already_configured": "This camera is already configured.",
-      "reauth_successful": "Password updated."
+      "reauth_successful": "Password updated.",
+      "wrong_camera": "This address belongs to another camera. Add that camera as a new device instead."
+    }
+  },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "Cannot connect to {host}: {error}"
+    },
+    "command_failed": {
+      "message": "Cannot update {entity_id}: {error}"
+    },
+    "ffmpeg_failed": {
+      "message": "ffmpeg failed on {media}: {detail}"
+    },
+    "ffmpeg_stalled": {
+      "message": "ffmpeg stalled for {seconds} s on {media}"
+    },
+    "login_failed": {
+      "message": "Login to {host} failed: {error}"
+    },
+    "play_failed": {
+      "message": "Cannot play media on {entity_id}: {error}"
+    },
+    "settings_read_failed": {
+      "message": "Cannot read settings from {host}: {error}"
+    },
+    "siren_failed": {
+      "message": "Cannot sound {entity_id}: {error}"
     }
   },
   "entity": {

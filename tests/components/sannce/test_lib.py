@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
@@ -52,6 +53,7 @@ async def test_create_camera_uses_given_ports(
     )
 
 
+@pytest.mark.usefixtures("mock_find_camera")
 async def test_flow_and_setup_build_the_camera_with_create_camera(
     hass: HomeAssistant, mock_camera: FakeSannceCamera
 ) -> None:

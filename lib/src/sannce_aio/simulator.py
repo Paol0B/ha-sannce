@@ -11,10 +11,10 @@ import wave
 import xml.etree.ElementTree as ET
 
 from aiohttp import web
+from aiohttp.typedefs import Handler
 
 from .audio import decode_alaw
 from .discovery import (
-    TARGETS,
     DiscoveredCamera,
     build_seek_reply,
     is_seek_request,
@@ -30,7 +30,6 @@ DEFAULT_SERIAL = "SIM0000000001"
 # RFC 7042 documentation address, so it never matches a real device
 DEFAULT_MAC = "00:00:5E:00:53:01"
 MAC_SHAPE = re.compile(r"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}")
-SEARCH_PORTS = tuple(sorted({port for _, port in TARGETS}))
 
 _READ_SIZE = 0x10000
 _SEQ_WRAP = 0x10000
@@ -143,6 +142,7 @@ class _SeekResponder(asyncio.DatagramProtocol):
         self._transport: asyncio.DatagramTransport | None = None
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
+        assert isinstance(transport, asyncio.DatagramTransport)
         self._transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
@@ -181,7 +181,7 @@ class CameraSimulator:
         self._start_password = password
         self._restore_start_state()
         self._sessions: set[_Session] = set()
-        self._handlers: set[asyncio.Task] = set()
+        self._handlers: set[asyncio.Task[None]] = set()
         self._server: asyncio.Server | None = None
         self._reopen: asyncio.Task[None] | None = None
         # drop, reset, stop and the reopen await mid-change, so they take turns
@@ -327,6 +327,7 @@ class CameraSimulator:
     ) -> None:
         session = _Session(writer)
         task = asyncio.current_task()
+        assert task is not None
         self._sessions.add(session)
         self._handlers.add(task)
         buffer = bytearray()
@@ -351,8 +352,8 @@ class CameraSimulator:
     async def _react(self, session: _Session, frame: Frame) -> None:
         fields = frame.fields
         if fields is None:
-            if session.talking:
-                self._record_audio(frame)
+            if session.talking and frame.payload is not None:
+                self._record_audio(frame.payload, frame.seq)
         elif not fields:
             self.heartbeats += 1
             # the real answer is unknown; any packet resets the SDK idle counter
@@ -415,15 +416,13 @@ class CameraSimulator:
             session.talking = False
             await session.send([*reply, "OK"])
 
-    def _record_audio(self, frame: Frame) -> None:
-        audio = _decode_audio(frame.payload)
+    def _record_audio(self, payload: bytes, seq: int) -> None:
+        audio = _decode_audio(payload)
         if audio is None:
-            _log.warning(
-                "undecodable talk audio packet of %d bytes", len(frame.payload)
-            )
+            _log.warning("undecodable talk audio packet of %d bytes", len(payload))
         else:
             self.talk_frames.append(audio)
-            self.talk_seqs.append(frame.seq)
+            self.talk_seqs.append(seq)
             self._talk_audio.append(audio)
 
     def _http_app(self) -> web.Application:
@@ -445,7 +444,9 @@ class CameraSimulator:
         return app
 
     @web.middleware
-    async def _require_session(self, request: web.Request, handler):
+    async def _require_session(
+        self, request: web.Request, handler: Handler
+    ) -> web.StreamResponse:
         if (
             request.path in (_SESSION_CHECK, _LOGON)
             or request.headers.get("HttpSession") in self._http_sessions

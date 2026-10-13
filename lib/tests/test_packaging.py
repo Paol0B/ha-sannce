@@ -26,6 +26,7 @@ PUBLIC_NAMES = {
     "SannceError",
     "TalkBusyError",
     "discover",
+    "find_camera",
 }
 
 
@@ -58,6 +59,7 @@ def test_public_name_resolves(name):
 def test_entry_points_have_the_documented_kind():
     assert inspect.isclass(sannce_aio.SannceCamera)
     assert inspect.iscoroutinefunction(sannce_aio.discover)
+    assert inspect.iscoroutinefunction(sannce_aio.find_camera)
 
 
 def test_project_identity(pyproject):
@@ -95,6 +97,10 @@ def test_wheel_packages_the_source_tree(pyproject):
     wheel = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]
     assert wheel["packages"] == ["src/sannce_aio"]
     assert (LIB / "src" / "sannce_aio" / "__init__.py").is_file()
+
+
+def test_the_package_ships_type_information():
+    assert (LIB / "src" / "sannce_aio" / "py.typed").is_file()
 
 
 def test_readme_is_declared_and_exists(pyproject):

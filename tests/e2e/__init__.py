@@ -24,8 +24,8 @@ ENTITY_KEYS = frozenset(
         "speaker",
     }
 )
-# the main stream starts disabled, so it has no state
-DISABLED_KEYS = frozenset({"main"})
+# these start disabled, so they have no state
+DISABLED_KEYS = frozenset({"main", "intrusion", "line", "tamper", "video_loss"})
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ async def add_by_ip(hass: HassClient, camera: CameraControl) -> Entry:
     login = await camera.state()
     result = await hass.add_camera(CAMERA_HOST, login["user"], login["password"])
     assert result["type"] == "create_entry", result
-    return await load_entry(hass, result["result"]["entry_id"], CAMERA_HOST)
+    return await load_entry(hass, result["result"]["entry_id"], SERIAL)
 
 
 async def add_by_search(hass: HassClient, camera: CameraControl) -> Entry:

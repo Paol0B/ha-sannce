@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
+from typing import TypeVar
 
 from .audio import G711A, SUBFRAME_PCM_BYTES, frame_talk_audio
 from .errors import AuthError, ConnectError, ProtocolError, TalkBusyError
@@ -9,6 +10,8 @@ from .login import LoginStep
 from .protocol import Frame, build_command, parse_frame
 
 _log = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 _READ_SIZE = 0x10000
 _MAX_BUFFER = 0x10000
@@ -163,7 +166,7 @@ class NvsConnection:
             try:
                 await self._connect_once()
             except ConnectError as exc:
-                _log.warning("reconnect failed (%s); retrying in %.1fs", exc, delay)
+                _log.debug("reconnect failed (%s); retrying in %.1fs", exc, delay)
             except AuthError as exc:
                 auth_failures += 1
                 if auth_failures >= self._auth_failure_limit:
@@ -175,7 +178,7 @@ class NvsConnection:
                     if self._on_login_failed is not None:
                         self._emit(self._on_login_failed, exc, "login failure")
                     return False
-                _log.warning(
+                _log.debug(
                     "reconnect login failed (%s), attempt %d of %d; retrying in %.1fs",
                     exc,
                     auth_failures,
@@ -183,7 +186,7 @@ class NvsConnection:
                     delay,
                 )
             else:
-                _log.info("reconnected to %s:%d", self._host, self._port)
+                _log.debug("reconnected to %s:%d", self._host, self._port)
                 self._set_available(True)
                 return True
             await asyncio.sleep(delay)
@@ -296,7 +299,11 @@ class NvsConnection:
         return await self._exchange(self._talk_pending, action, message, None)
 
     async def _exchange(
-        self, pending: dict, key: object, message: list[str], timeout: float | None
+        self,
+        pending: dict[_T, asyncio.Future[list[str]]],
+        key: _T,
+        message: list[str],
+        timeout: float | None,
     ) -> list[str]:
         writer = self._writer
         if not self._available or writer is None:
@@ -359,7 +366,7 @@ class NvsConnection:
         self._available = state
         self._emit(self._on_availability, state, "availability")
 
-    def _emit(self, callback: Callable, arg: object, label: str) -> None:
+    def _emit(self, callback: Callable[[_T], None], arg: _T, label: str) -> None:
         # a raising callback must not kill the receive loop or supervisor
         try:
             callback(arg)
@@ -383,7 +390,7 @@ class NvsConnection:
         peer = writer.get_extra_info("peername") if writer is not None else None
         if not peer:
             raise ConnectError("not connected")
-        return peer[0]
+        return str(peer[0])
 
     def _next_seq(self) -> int:
         seq = self._seq
@@ -427,7 +434,7 @@ def _reply_session_id(fields: list[str]) -> int | None:
         return None
 
 
-async def _cancel(task: asyncio.Task) -> None:
+async def _cancel(task: asyncio.Task[None]) -> None:
     task.cancel()
     try:
         await task
