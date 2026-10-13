@@ -37,7 +37,7 @@ async def test_setup_and_unload_entry(
         session=async_get_clientsession(hass),
     )
     mock_camera.connect.assert_awaited_once()
-    assert mock_config_entry.runtime_data is mock_camera
+    assert mock_config_entry.runtime_data.camera is mock_camera
     mock_camera.close.assert_not_awaited()
 
     assert await hass.config_entries.async_unload(mock_config_entry.entry_id)

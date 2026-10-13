@@ -12,7 +12,13 @@ from homeassistant.config_entries import (
     ConfigEntryState,
     ConfigFlowResult,
 )
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_MAC,
+    CONF_MODEL,
+    CONF_PASSWORD,
+    CONF_USERNAME,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import config_validation as cv
@@ -25,6 +31,7 @@ from custom_components.sannce.const import (
     CONF_HTTP_PORT,
     CONF_NVS_PORT,
     CONF_RTSP_PORT,
+    CONF_SERIAL,
     DOMAIN,
 )
 
@@ -34,6 +41,7 @@ from .conftest import FakeSannceCamera
 USER_INPUT = {CONF_HOST: HOST, CONF_USERNAME: USERNAME, CONF_PASSWORD: PASSWORD}
 DEFAULT_PORTS = {CONF_NVS_PORT: 3000, CONF_HTTP_PORT: 80, CONF_RTSP_PORT: 554}
 SERIAL = "SN0000000001"
+MAC = "00:00:5E:00:53:2A"
 INTEGRATION_DIR = Path(integration.__file__).parent
 
 
@@ -69,7 +77,7 @@ async def reauth_flow(
 def discovered(**fields: Any) -> lib.DiscoveredCamera:
     values = {
         "ip": HOST,
-        "mac": "00:00:5E:00:53:2A",
+        "mac": MAC,
         "serial": SERIAL,
         "model": "I91FW",
         "http_port": 8080,
@@ -182,7 +190,9 @@ async def test_config_flow_uses_model_and_serial(
     mock_camera: FakeSannceCamera,
     mock_setup_entry: AsyncMock,
 ) -> None:
-    mock_camera.info = lib.CameraInfo(model="I91FW", serial=SERIAL, firmware="1.0.0")
+    mock_camera.info = lib.CameraInfo(
+        model="I91FW", serial=SERIAL, firmware="1.0.0", mac=MAC
+    )
     result = await start_flow(hass)
 
     result = await submit(hass, result, USER_INPUT)
@@ -190,6 +200,11 @@ async def test_config_flow_uses_model_and_serial(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "I91FW"
     assert result["result"].unique_id == SERIAL
+    assert result["data"] == USER_INPUT | DEFAULT_PORTS | {
+        CONF_MODEL: "I91FW",
+        CONF_SERIAL: SERIAL,
+        CONF_MAC: MAC,
+    }
 
 
 async def test_config_flow_invalid_auth(
@@ -319,13 +334,23 @@ async def test_config_flow_duplicate_serial(
     mock_camera.close.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    ("camera", "identity"),
+    [
+        (discovered(), {CONF_MODEL: "I91FW", CONF_SERIAL: SERIAL, CONF_MAC: MAC}),
+        (discovered(mac=""), {CONF_MODEL: "I91FW", CONF_SERIAL: SERIAL}),
+    ],
+    ids=["full", "no_mac"],
+)
 async def test_config_flow_discovery(
     hass: HomeAssistant,
     mock_discover: AsyncMock,
     mock_camera_class: MagicMock,
     mock_setup_entry: AsyncMock,
+    camera: lib.DiscoveredCamera,
+    identity: dict[str, str],
 ) -> None:
-    mock_discover.return_value = [discovered()]
+    mock_discover.return_value = [camera]
     result = await start_flow(hass)
 
     result = await submit(hass, result, {CONF_HOST: ""})
@@ -351,7 +376,7 @@ async def test_config_flow_discovery(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "I91FW"
     assert result["result"].unique_id == SERIAL
-    assert result["data"] == USER_INPUT | DEFAULT_PORTS | {
+    assert result["data"] == USER_INPUT | DEFAULT_PORTS | identity | {
         CONF_NVS_PORT: 3001,
         CONF_HTTP_PORT: 8080,
     }

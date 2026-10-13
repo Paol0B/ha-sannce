@@ -4,16 +4,22 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_MAC,
+    CONF_MODEL,
+    CONF_PASSWORD,
+    CONF_USERNAME,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import lib
 from .const import (
     CONF_HTTP_PORT,
     CONF_NVS_PORT,
     CONF_RTSP_PORT,
+    CONF_SERIAL,
     DEFAULT_HTTP_PORT,
     DEFAULT_NVS_PORT,
     DEFAULT_RTSP_PORT,
@@ -42,15 +48,7 @@ class _ProbeError(Exception):
 
 async def _async_probe(hass: HomeAssistant, data: Mapping[str, Any]) -> lib.CameraInfo:
     try:
-        camera = lib.SannceCamera(
-            data[CONF_HOST],
-            data[CONF_USERNAME],
-            data[CONF_PASSWORD],
-            nvs_port=data.get(CONF_NVS_PORT, DEFAULT_NVS_PORT),
-            http_port=data.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT),
-            rtsp_port=data.get(CONF_RTSP_PORT, DEFAULT_RTSP_PORT),
-            session=async_get_clientsession(hass),
-        )
+        camera = lib.create_camera(hass, data)
     except ValueError as err:
         raise _ProbeError("invalid_host") from err
     try:
@@ -182,6 +180,11 @@ class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
         found = self._found.get(host)
         serial = info.serial or (found and found.serial)
         model = info.model or (found and found.model)
+        mac = info.mac or (found and found.mac)
         await self.async_set_unique_id(serial or host)
         self._abort_if_unique_id_configured()
-        return self.async_create_entry(title=model or host, data=data)
+        identity = {CONF_MODEL: model, CONF_SERIAL: serial, CONF_MAC: mac}
+        return self.async_create_entry(
+            title=model or host,
+            data=data | {key: value for key, value in identity.items() if value},
+        )
