@@ -17,7 +17,7 @@ Not verified on hardware. The protocol comes from static analysis of the SANNCE 
 - A camera on the same LAN, activated, with an admin password.
 - TCP from Home Assistant to the camera: port 3000 (events, speaker), 80 (settings) and 554 (video).
 - A fixed camera address. The integration does not follow address changes.
-- The `ffmpeg` binary, for the siren and the speaker. The official container image has it.
+- The `ffmpeg` binary, for the speaker only. The siren builds its tone in Python. The official container image has ffmpeg.
 
 ## Install
 
@@ -79,9 +79,9 @@ A dropped camera connection makes every entity unavailable, not off, until it re
 
 ## Known limits
 
-- **Floodlight off means auto.** Turning the light off hands the lamp back to the camera. It does not force the lamp off. The entity reads on only while the lamp is forced on. A lamp the camera lit by itself reads off. For a lamp that never lights, set Light mode to Infrared.
+- **Floodlight off means auto.** Turning the light off hands the lamp back to the camera. It does not force the lamp off. The entity reads on only while the lamp is forced on. A lamp the camera lit by itself reads off. To stop the camera lighting the lamp, set Light mode to Infrared.
 - **No person sensor.** The camera sends motion and vehicle events, not a person event. A person most likely arrives as plain Motion. Person detection is a switch that turns the camera's person filter on or off. Check 6.3 of the hardware checklist looks for a real person source, such as ONVIF.
-- **Detection switches may be locked.** The Motion detection switch writes only the camera's all-motion flag. The vendor app sets person and vehicle together with that flag and locks them while it is on. The app also refuses to turn person and vehicle off in Smart light mode. The camera may enforce the same rules. Then the person and vehicle switches can read off while the camera treats them as on. Some changes can fail. Not verified. Checks 9.6 and 9.7 of the hardware checklist cover it. The protocol spec has details in its Light mode and Motion detection sections.
+- **Detection switches may be locked.** The Motion detection switch writes only the camera's all-motion flag. The vendor app sets person and vehicle together with that flag and locks them while it is on. The app also refuses to turn person and vehicle off in Smart light mode. The camera may enforce the same rules. Then the person and vehicle switches can read off while the camera treats them as on. Some changes can fail. Not verified. Check 9.7 of the hardware checklist covers it. The protocol spec has details in its Light mode and Motion detection sections.
 - **Siren and speaker replies are inferred.** Both send audio over the camera's talk channel. The camera's replies to start, refuse and end come from the vendor SDK code, not from a camera. The library always reports the talk capability. Every camera gets a siren and a speaker, even one without a speaker. One sound plays at a time, and a new sound replaces the current one.
 - **Rule sensors may stay silent.** Intrusion, Line crossing, Tamper and Video loss exist on every camera. The I91FW may never send those events. Disable the ones you do not need.
 - **Events clear on a timer.** The camera may not send a stop event. A sensor turns off 10 seconds after the last start.
@@ -130,7 +130,7 @@ python -m venv .venv
 ```
 
 - `PyTurboJPEG` is imported by Home Assistant's camera component. Home Assistant 2026.10 pins version 1.8.3.
-- `ha-ffmpeg` is the Python package of Home Assistant's ffmpeg integration. A real install needs it for the siren and the speaker. The tests do not: they mark the ffmpeg component as loaded.
+- `ha-ffmpeg` is the Python package of Home Assistant's ffmpeg integration. The speaker needs it. The siren does not, because it builds its tone in Python. The tests do not either: they mark the ffmpeg component as loaded.
 
 Run the tests from the repository root.
 

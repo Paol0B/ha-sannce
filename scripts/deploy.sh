@@ -19,7 +19,7 @@ repo="$(dirname "$here")"
 target="$config/custom_components/sannce"
 
 "$here/vendor-lib.sh"
-ssh "$host" mkdir -p "$target"
-rsync -a --delete --no-owner --no-group --exclude '__pycache__/' \
+ssh "$host" "mkdir -p -- $(printf '%q' "$target")"
+rsync -a -s --delete --no-owner --no-group --exclude '__pycache__/' \
   "$repo/custom_components/sannce/" "$host:$target/"
 ssh "$host" docker restart "$container"
