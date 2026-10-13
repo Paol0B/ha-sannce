@@ -1,0 +1,117 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a SANNCE camera",
+        "description": "Enter the camera address and login. Leave the host empty to search the network.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password",
+          "nvs_port": "Private protocol port",
+          "http_port": "HTTP port",
+          "rtsp_port": "RTSP port"
+        },
+        "data_description": {
+          "host": "IP address or host name of the camera.",
+          "username": "Login name of the camera.",
+          "password": "Password of the camera login.",
+          "nvs_port": "Used for events and the speaker.",
+          "http_port": "Used for settings such as the light and detection.",
+          "rtsp_port": "Used for the video streams."
+        }
+      },
+      "pick_camera": {
+        "title": "Choose a camera",
+        "description": "Pick the camera to add. You enter its login next.",
+        "data": {
+          "host": "Camera"
+        },
+        "data_description": {
+          "host": "Cameras found on your network."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "Login to {host} failed. Enter the new password for {username}.",
+        "data": {
+          "password": "Password"
+        },
+        "data_description": {
+          "password": "New password of the camera login."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the camera.",
+      "invalid_auth": "Login failed. Check the username and password.",
+      "invalid_host": "Enter a host name or IP address only. It cannot contain / ? # or @.",
+      "no_cameras_found": "No cameras found on the network.",
+      "unknown": "Unexpected error. See the log for details."
+    },
+    "abort": {
+      "already_configured": "This camera is already configured.",
+      "reauth_successful": "Password updated."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "intrusion": {
+        "name": "Intrusion"
+      },
+      "line": {
+        "name": "Line crossing"
+      },
+      "vehicle": {
+        "name": "Vehicle"
+      },
+      "video_loss": {
+        "name": "Video loss"
+      }
+    },
+    "camera": {
+      "main": {
+        "name": "Main stream"
+      },
+      "sub": {
+        "name": "Sub stream"
+      }
+    },
+    "light": {
+      "floodlight": {
+        "name": "Floodlight"
+      }
+    },
+    "media_player": {
+      "speaker": {
+        "name": "Speaker"
+      }
+    },
+    "select": {
+      "light_mode": {
+        "name": "Light mode",
+        "state": {
+          "color": "Color",
+          "infrared": "Infrared",
+          "smart": "Smart"
+        }
+      }
+    },
+    "siren": {
+      "siren": {
+        "name": "Siren"
+      }
+    },
+    "switch": {
+      "motion_detection": {
+        "name": "Motion detection"
+      },
+      "person_detection": {
+        "name": "Person detection"
+      },
+      "vehicle_detection": {
+        "name": "Vehicle detection"
+      }
+    }
+  }
+}
