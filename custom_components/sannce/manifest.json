@@ -1,7 +1,7 @@
 {
   "domain": "sannce",
   "name": "SANNCE",
-  "codeowners": ["@bertinetti"],
+  "codeowners": ["@Paol0B"],
   "config_flow": true,
   "dependencies": ["ffmpeg", "media_source", "stream"],
   "dhcp": [
@@ -18,10 +18,10 @@
       "macaddress": "E4E66C*"
     }
   ],
-  "documentation": "https://github.com/bertinetti/ha-sannce",
+  "documentation": "https://github.com/Paol0B/ha-sannce",
   "integration_type": "device",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/bertinetti/ha-sannce/issues",
+  "issue_tracker": "https://github.com/Paol0B/ha-sannce/issues",
   "requirements": [],
   "version": "0.1.0"
 }
