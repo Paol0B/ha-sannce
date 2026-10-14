@@ -43,9 +43,11 @@ jobs:
       - name: Check the vendored library is current
         run: |
           scripts/vendor-lib.sh
-          # intent-to-add makes a new file show in the diff
-          git add --intent-to-add --all -- custom_components/sannce/sannce_aio
-          git diff --exit-code -- custom_components/sannce/sannce_aio
+          drift=$(git status --porcelain -- custom_components/sannce/sannce_aio)
+          if [[ -n $drift ]]; then
+            echo "$drift"
+            exit 1
+          fi
       - run: python -m venv .venv
       - run: .venv/bin/python -m pip install -r requirements-dev.txt
       - run: scripts/quality.sh

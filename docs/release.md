@@ -6,7 +6,7 @@ This repository, `Paol0B/ha-sannce`:
 
 | Workflow | When | What |
 |---|---|---|
-| `.github/workflows/ci.yml` | push and pull request to master, or by hand | `library`: pytest on `lib/tests` and `tests/docs`, Python 3.11 and 3.14. `quality`: a check that `custom_components/sannce/sannce_aio/` matches `lib/src/` (`scripts/vendor-lib.sh` leaves no diff), then `scripts/quality.sh` on Python 3.14. `hassfest`: `scripts/bench.sh hassfest`. `hacs`: HACS validation, category integration. |
+| `.github/workflows/ci.yml` | push and pull request to master, or by hand | `library`: pytest on `lib/tests` and `tests/docs`, Python 3.11 and 3.14. `quality`: a check that `custom_components/sannce/sannce_aio/` matches `lib/src/` (`git status` shows nothing there after `scripts/vendor-lib.sh`), then `scripts/quality.sh` on Python 3.14. `hassfest`: `scripts/bench.sh hassfest`. `hacs`: HACS validation, category integration. |
 | `.github/workflows/e2e.yml` | by hand only | `scripts/bench.sh test`: Home Assistant 2026.10.1 and the simulated camera in Docker, then the end-to-end suite and hassfest. It always runs `scripts/bench.sh down` after. A failed run uploads the Home Assistant log as the artifact `home-assistant-log`. |
 
 The library repository, `Paol0B/sannce-aio`, runs the workflows in `lib/.github/workflows/`:
