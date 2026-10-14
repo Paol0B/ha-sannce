@@ -243,6 +243,8 @@ The camera library `sannce-aio` lives in `lib/` ([lib/README.md](lib/README.md))
 
 After you change `lib/src/`, run `scripts/vendor-lib.sh`. `scripts/deploy.sh` runs it too.
 
+What CI runs, how to publish the library and what is still open are in [docs/release.md](docs/release.md).
+
 The test tools need Python 3.14.2 or newer, as Home Assistant 2026.10 does.
 
 ```sh

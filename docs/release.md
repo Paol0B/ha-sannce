@@ -1,0 +1,67 @@
+# Release
+
+## What CI runs
+
+This repository, `Paol0B/ha-sannce`:
+
+| Workflow | When | What |
+|---|---|---|
+| `.github/workflows/ci.yml` | push and pull request to master, or by hand | `library`: pytest on `lib/tests` and `tests/docs`, Python 3.11 and 3.14. `quality`: `scripts/quality.sh` on Python 3.14. `hassfest`: `scripts/bench.sh hassfest`. `hacs`: HACS validation, category integration. |
+| `.github/workflows/e2e.yml` | by hand only | `scripts/bench.sh test`: Home Assistant 2026.10.1 and the simulated camera in Docker, then the end-to-end suite and hassfest. It always runs `scripts/bench.sh down` after. A failed run uploads the Home Assistant log as the artifact `home-assistant-log`. |
+
+The library repository, `Paol0B/sannce-aio`, runs the workflows in `lib/.github/workflows/`:
+
+| Workflow | When | What |
+|---|---|---|
+| `ci.yml` | push and pull request | pytest on Python 3.11 to 3.14, mypy on 3.11 and 3.14, build, `twine check --strict`, and a check that the wheel holds `py.typed`. |
+| `publish.yml` | tag `v*` | Checks that the tag equals the version in `pyproject.toml`, builds, checks, and publishes to PyPI with trusted publishing. No token. |
+
+- The `hacs` job ignores four checks that cannot pass yet: `brands` (no logo pull request), `license` (no license), `hacsjson` and `integration_manifest` (HACS reads both files without a token, so a private repository fails). Remove each ignore in `ci.yml` when its cause is gone.
+- Every action is pinned to a full commit SHA, with its version in a comment. Update them by hand.
+- `hacs/action` runs the image `ghcr.io/hacs/action:main`. Its latest release is from 2022, and the image tag floats.
+- GitHub lets you start `ci.yml` or `e2e.yml` by hand only after the file is on master: `gh workflow run e2e.yml`.
+- The same checks run on your machine: `scripts/quality.sh`, `scripts/bench.sh hassfest` and `scripts/bench.sh test`. See [Development](../README.md#development).
+
+## Publish the library
+
+Once, before the first release, on pypi.org: Your account, Publishing, add a pending publisher with these exact values.
+
+| Field | Value |
+|---|---|
+| PyPI project name | `sannce-aio` |
+| Owner | `Paol0B` |
+| Repository | `sannce-aio` |
+| Workflow | `publish.yml` |
+| Environment | `pypi` |
+
+The GitHub environment `pypi` already exists in `Paol0B/sannce-aio`.
+
+For each release:
+
+1. Set `version` in `lib/pyproject.toml` and commit it.
+2. Run `scripts/publish-lib.sh`. It splits `lib/` and pushes it to master of `sannce-aio`. Wait for its CI to pass.
+3. Run `scripts/publish-lib.sh --tag vX.Y.Z`. It checks that `X.Y.Z` is the version in `lib/pyproject.toml`, then pushes the split head as the tag. The tag starts `publish.yml`.
+4. Watch the run in `Paol0B/sannce-aio` and check the project on PyPI.
+
+The script needs a clean working tree. A version on PyPI cannot be replaced: fix a bad release with a new version.
+
+## After the first PyPI release
+
+The integration then installs the library from PyPI instead of carrying a copy.
+
+1. Set `requirements` in `custom_components/sannce/manifest.json` to `["sannce-aio==X.Y.Z"]`.
+2. Delete `custom_components/sannce/sannce_aio/` and `scripts/vendor-lib.sh`. Remove the `vendor-lib.sh` calls from `scripts/bench.sh` and `scripts/deploy.sh`, and the `omit` line in `.coveragerc`.
+3. In `custom_components/sannce/lib.py`, import from `sannce_aio` instead of `.sannce_aio`.
+4. Make the bench and the unit tests use the installed library.
+   - The bench: Home Assistant installs the library from PyPI when it loads the manifest. The camera image still builds the simulator from `lib/`.
+   - The unit tests: `requirements-dev.txt` already installs `lib/`. Change the two tests in `tests/components/sannce/test_manifest.py` that expect no requirements and a vendored copy.
+5. Set `dependency-transparency` to `done` in `custom_components/sannce/quality_scale.yaml`. Remove its line from `publication_only` in `scripts/quality.sh`, so only `brands` stays allowed.
+6. In `lib/README.md`, change Install to `pip install sannce-aio`.
+7. Update the Development section of `README.md`, which describes the copy.
+8. Run `scripts/quality.sh` and `scripts/bench.sh test`.
+
+## Open decisions
+
+- **License.** Neither repository has one. Pick one before anything goes public.
+- **Public repositories.** HACS's default list needs a public repository. The `dependency-transparency` rule needs the library source to be public, with tagged releases built by CI. Both repositories are private now.
+- **Brands.** Home Assistant shows the integration's logo from `home-assistant/brands`. That needs a pull request there with a logo for the domain `sannce`. Until it is merged, the HACS `brands` check and the quality scale rule `brands` stay failing, and CI ignores them.
