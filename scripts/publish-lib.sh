@@ -11,6 +11,7 @@ usage() {
 usage: publish-lib.sh [--tag vX.Y.Z]
   (no option)   split lib/ and push it to master of the sannce-aio repository
   --tag vX.Y.Z  also tag the split head and push the tag, which starts the PyPI release
+Run it from master. The branch publication may push without --tag.
 USAGE
   exit 2
 }
@@ -26,6 +27,12 @@ cd "$repo"
 
 if [[ -n $(git status --porcelain) ]]; then
   echo "error: the working tree is not clean" >&2
+  exit 1
+fi
+
+branch=$(git branch --show-current)
+if [[ $branch != master && ( $branch != publication || -n $tag ) ]]; then
+  echo "error: HEAD is '${branch:-detached}'; publish from master (publication only without --tag)" >&2
   exit 1
 fi
 
@@ -47,6 +54,7 @@ else
 fi
 
 head=$(git subtree split --prefix=lib HEAD)
+echo "branch $branch, split commit $head"
 git push "$remote" "$head:refs/heads/master"
 if [[ -n $tag ]]; then
   git push "$remote" "$head:refs/tags/$tag"
