@@ -243,22 +243,24 @@ The camera library `sannce-aio` lives in `lib/` ([lib/README.md](lib/README.md))
 
 After you change `lib/src/`, run `scripts/vendor-lib.sh`. `scripts/deploy.sh` runs it too.
 
+What CI runs, how to publish the library and what is still open are in [docs/release.md](docs/release.md).
+
 The test tools need Python 3.14.2 or newer, as Home Assistant 2026.10 does.
 
 ```sh
 python -m venv .venv
-.venv/bin/python -m pip install pytest-homeassistant-custom-component PyTurboJPEG==1.8.3
-.venv/bin/python -m pip install -e "./lib[dev]"
+.venv/bin/python -m pip install -r requirements-dev.txt
 ```
+
+`requirements-dev.txt` pins the test tools, mypy and an editable install of `lib/`. CI jobs `quality` and `e2e` install that file. The `library` job installs only `./lib[dev]`. The `hassfest` and `hacs` jobs install no Python packages.
 
 - `PyTurboJPEG` is imported by Home Assistant's camera component. Home Assistant 2026.10 pins version 1.8.3.
 - `ha-ffmpeg` is the Python package of Home Assistant's ffmpeg integration. A real install needs it, because the manifest requires the ffmpeg integration. The siren tone itself is built in Python. The test suite mocks the ffmpeg component, so the tests do not need it.
 - `av` (PyAV) is the Python package of Home Assistant's stream integration. The manifest requires stream, because camera snapshots come from the stream. The test suite mocks the stream component too.
 
-Type checking uses mypy 2.3.1 in strict mode, with the settings in `mypy.ini`.
+Type checking uses mypy in strict mode, with the settings in `mypy.ini`.
 
 ```sh
-.venv/bin/python -m pip install mypy==2.3.1
 .venv/bin/python -m mypy
 ```
 
