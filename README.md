@@ -252,7 +252,7 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
-`requirements-dev.txt` pins the test tools, mypy and an editable install of `lib/`. CI installs the same file.
+`requirements-dev.txt` pins the test tools, mypy and an editable install of `lib/`. CI jobs `quality` and `e2e` install that file. The `library` job installs only `./lib[dev]`. The `hassfest` and `hacs` jobs install no Python packages.
 
 - `PyTurboJPEG` is imported by Home Assistant's camera component. Home Assistant 2026.10 pins version 1.8.3.
 - `ha-ffmpeg` is the Python package of Home Assistant's ffmpeg integration. A real install needs it, because the manifest requires the ffmpeg integration. The siren tone itself is built in Python. The test suite mocks the ffmpeg component, so the tests do not need it.
