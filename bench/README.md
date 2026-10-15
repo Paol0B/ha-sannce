@@ -7,6 +7,7 @@ The bench runs the integration in a real Home Assistant against a simulated came
 - Linux with Docker and Compose 2. Tested with Docker 29.1.3 and Compose 2.40.3.
 - The `.venv` from [Development](../README.md#development). `scripts/bench.sh` runs its Python.
 - rsync. `scripts/vendor-lib.sh` copies the library into the integration with it.
+- The `lib/` submodule, checked out: `git submodule update --init`. The camera image builds from it.
 - About 4.5 GB of disk for the images. Home Assistant alone is 3.5 GB.
 - Nothing else on `127.0.0.1:8123` or on the Docker subnet `172.31.250.0/24`.
 

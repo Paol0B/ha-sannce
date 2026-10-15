@@ -254,11 +254,25 @@ The bench checks that go2rtc accepts audio from a client and opens the backchann
 
 ## Development
 
-The camera library `sannce-aio` lives in `lib/` ([lib/README.md](lib/README.md)). A copy sits in `custom_components/sannce/sannce_aio/`, without the simulator, its control API and the CLI. Only `custom_components/sannce/lib.py` imports it. `manifest.json` lists no requirements until the library is on PyPI.
+The camera library `sannce-aio` is the git submodule `lib/`, from the repository `Paol0B/sannce-aio` ([lib/README.md](lib/README.md)). Clone with it:
+
+```sh
+git clone --recurse-submodules https://github.com/Paol0B/ha-sannce.git
+```
+
+In a clone made without `--recurse-submodules`, run `git submodule update --init`. After a pull that moves `lib`, run `git submodule update`.
+
+A copy of the library sits in `custom_components/sannce/sannce_aio/`, without the simulator, its control API and the CLI. Only `custom_components/sannce/lib.py` imports it. `manifest.json` lists no requirements until the library is on PyPI.
 
 After you change `lib/src/`, run `scripts/vendor-lib.sh`. `scripts/deploy.sh` runs it too.
 
-What CI runs, how to publish the library and what is still open are in [docs/release.md](docs/release.md).
+To change the library:
+
+1. `git submodule update` leaves `lib/` on a detached HEAD. Run `git -C lib switch master`, or make a branch there.
+2. Commit in `lib/` and push to `sannce-aio`. CI here fails while the `lib` commit is not on master of `sannce-aio`.
+3. In this repository, `git add lib` and commit the new pointer. `git push --recurse-submodules=check` refuses to push while the `lib` commit is not pushed.
+
+What CI runs, how to release the library and what is still open are in [docs/release.md](docs/release.md).
 
 The test tools need Python 3.14.2 or newer, as Home Assistant 2026.10 does.
 
