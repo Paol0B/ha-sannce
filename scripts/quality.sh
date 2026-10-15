@@ -16,6 +16,7 @@ if [[ ! -x "$python" ]]; then
   exit 1
 fi
 cd "$repo"
+"$here/vendor-lib.sh"
 
 echo "== mypy"
 "$python" -m mypy

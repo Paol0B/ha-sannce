@@ -21,7 +21,7 @@ The bench runs the integration in a real Home Assistant against a simulated came
 | `scripts/bench.sh test` | Reset, run the end-to-end suite on the bridge, then hassfest. |
 | `scripts/bench.sh event KIND [on\|off]` | Push an event: `motion`, `vehicle`, `intrusion`, `line`, `tamper` or `video_loss`. The default is `on`. |
 | `scripts/bench.sh audio FILE` | Save the last talk session as WAV. |
-| `scripts/bench.sh hassfest` | Validate `custom_components/sannce` with hassfest. |
+| `scripts/bench.sh hassfest` | Copy the library into the integration, then validate `custom_components/sannce` with hassfest. |
 
 - `up` copies `lib/src/` into the integration and rebuilds the camera image. If Home Assistant is already running, `up` restarts it, because Home Assistant reads custom integrations only when it starts.
 - `test` removes the camera from Home Assistant at the end. Run `up` to add it back.

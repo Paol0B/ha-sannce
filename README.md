@@ -50,11 +50,11 @@ Everything else comes from the vendor app's code and from the simulator the test
 
 ### HACS
 
-Add this repository to HACS as a custom repository with the category Integration. Download SANNCE, then restart Home Assistant.
+HACS cannot install the integration yet. HACS downloads only the files git tracks, and the camera library copy is not one of them. HACS works once `sannce-aio` is on PyPI and `manifest.json` lists it under `requirements`, see [docs/release.md](docs/release.md#after-the-first-pypi-release). Until then, use Manual or Container, over SSH.
 
 ### Manual
 
-Copy `custom_components/sannce` to `<config>/custom_components/sannce`, then restart Home Assistant. The folder includes the camera library, so nothing else needs installing.
+Clone the repository with its `lib` submodule, as Development says, and run `scripts/vendor-lib.sh`. It copies the camera library into `custom_components/sannce/sannce_aio/` with rsync. Then copy `custom_components/sannce` to `<config>/custom_components/sannce` and restart Home Assistant. Nothing else needs installing.
 
 ### Container, over SSH
 
@@ -63,7 +63,7 @@ scripts/deploy.sh HOST [CONTAINER] [CONFIG_PATH]
 ENGINE=podman scripts/deploy.sh HOST homeassistant /path/to/config
 ```
 
-The script refreshes the bundled library from `lib/src/`, copies `custom_components/sannce` to `HOST` with rsync, then restarts the container.
+The script copies the camera library into the integration with `scripts/vendor-lib.sh`, copies `custom_components/sannce` to `HOST` with rsync, then restarts the container. It needs the `lib` submodule, see Development.
 
 | Argument | Meaning | Default |
 |---|---|---|
@@ -262,9 +262,9 @@ git clone --recurse-submodules https://github.com/Paol0B/ha-sannce.git
 
 In a clone made without `--recurse-submodules`, run `git submodule update --init`. After a pull that moves `lib`, run `git submodule update`.
 
-A copy of the library sits in `custom_components/sannce/sannce_aio/`, without the simulator, its control API and the CLI. Only `custom_components/sannce/lib.py` imports it. `manifest.json` lists no requirements until the library is on PyPI.
+`scripts/vendor-lib.sh` copies the library into `custom_components/sannce/sannce_aio/`, without the simulator, its control API and the CLI. Git ignores that copy. Only `custom_components/sannce/lib.py` imports it. `manifest.json` lists no requirements until the library is on PyPI.
 
-After you change `lib/src/`, run `scripts/vendor-lib.sh`. `scripts/deploy.sh` runs it too.
+Run `scripts/vendor-lib.sh` before mypy and the Home Assistant tests, and again after `lib/` changes. `scripts/quality.sh`, `scripts/bench.sh` and `scripts/deploy.sh` run it themselves.
 
 To change the library:
 

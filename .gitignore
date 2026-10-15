@@ -5,3 +5,4 @@ __pycache__/
 .coverage
 bench/ha-config/
 bench/media/
+custom_components/sannce/sannce_aio/
