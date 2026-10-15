@@ -1,4 +1,4 @@
-rtspAddress: :554
+rtspAddress: :8554
 rtspTransports: [tcp]
 rtmp: no
 hls: no
@@ -17,6 +17,7 @@ authInternalUsers:
     ips: ['127.0.0.1/32', '::1/128']
     permissions:
       - action: publish
+      - action: read
 paths:
   "1/1":
     runOnInit: ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc=size=1280x720:rate=10 -f lavfi -i sine=frequency=440:sample_rate=48000 -c:v libx264 -pix_fmt yuv420p -preset ultrafast -tune zerolatency -g 10 -c:a aac -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH

@@ -35,15 +35,44 @@ async def test_fake_pushes_events_and_availability() -> None:
 async def test_fake_setters_change_what_getters_return() -> None:
     camera = FakeSannceCamera()
 
-    await camera.set_light(True)
-    await camera.set_light_mode("smart")
+    await camera.set_floodlight(True, brightness=40)
     await camera.set_detection(person=False)
+    await camera.set_sensitivity(20)
+    await camera.set_volume(30)
+    await camera.set_siren_on_event(True)
 
-    assert await camera.get_light() is True
-    assert await camera.get_light_mode() == "smart"
+    assert await camera.get_floodlight() == lib.Floodlight(on=True, brightness=40)
+    assert await camera.get_light_mode() == "color"
     assert await camera.get_detection() == lib.Detection(
-        person=False, vehicle=True, motion=True
+        person=False, vehicle=True, motion=False, sensitivity=20
     )
+    assert await camera.get_volume() == 30
+    assert await camera.get_siren_on_event() is True
+
+    await camera.set_floodlight(False, base_mode="infrared")
+    await camera.set_light_mode("smart")
+
+    assert await camera.get_floodlight() == lib.Floodlight(on=False, brightness=40)
+    assert await camera.get_light_mode() == "smart"
+
+
+async def test_fake_keeps_a_custom_mode_when_forced_on() -> None:
+    camera = FakeSannceCamera()
+    camera.light_mode = "custom"
+
+    await camera.set_floodlight(True)
+
+    assert camera.light_mode == "custom"
+    assert camera.brightness == 100
+
+
+async def test_fake_records_sounds() -> None:
+    camera = FakeSannceCamera()
+
+    await camera.play_sound(2)
+    await camera.stop_sound(2)
+
+    assert camera.sounds == [(2, 1), (2, 0)]
 
 
 async def test_fake_rejects_overlapping_talk() -> None:
@@ -69,3 +98,25 @@ async def test_fake_rejects_overlapping_talk() -> None:
         await first
     assert camera.played == [b"\x00\x01"]
     assert (camera.talk_starts, camera.talk_stops) == (1, 1)
+
+
+async def test_fake_holds_a_play_at_the_audio_gate() -> None:
+    camera = FakeSannceCamera()
+    camera.audio_gate = gate = asyncio.Event()
+
+    async def two() -> AsyncIterator[bytes]:
+        yield b"\x00\x01"
+        yield b"\x02\x03"
+
+    play = asyncio.create_task(camera.play_audio(two()))
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    assert camera.played == [b"\x00\x01"]
+    assert camera.talk_active is True
+
+    gate.set()
+    await play
+
+    assert camera.played == [b"\x00\x01", b"\x02\x03"]
+    assert camera.talk_active is False

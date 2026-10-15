@@ -2,6 +2,7 @@ import pytest
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityDescription
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -10,7 +11,7 @@ from custom_components.sannce.const import DOMAIN
 from custom_components.sannce.coordinator import SannceCoordinator
 from custom_components.sannce.entity import SannceEntity, SannceSettingsEntity
 
-from . import HOST, PASSWORD, USERNAME
+from . import HOST, PASSWORD, USERNAME, setup_integration
 from .conftest import FakeSannceCamera
 
 DESCRIPTION = EntityDescription(key="probe")
@@ -111,3 +112,25 @@ async def test_device_info_when_only_the_host_is_known(
         serial_number=None,
         sw_version=None,
     )
+
+
+async def test_reolink_style_entity_ids(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    await setup_integration(hass, identified_entry)
+
+    ids = {
+        entry.unique_id.removeprefix("SN123456_"): entry.entity_id
+        for entry in er.async_entries_for_config_entry(
+            entity_registry, identified_entry.entry_id
+        )
+    }
+
+    assert ids["main"] == "camera.i91fw_clear"
+    assert ids["sub"] == "camera.i91fw_fluent"
+    assert ids["person"] == "binary_sensor.i91fw_person"
+    assert ids["motion"] == "binary_sensor.i91fw_motion"
+    assert ids["vehicle"] == "binary_sensor.i91fw_vehicle"

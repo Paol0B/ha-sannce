@@ -167,13 +167,13 @@ def _unanswered(host: str, mac: str) -> lib.DiscoveredCamera:
 def _settings(camera: lib.DiscoveredCamera) -> dict[str, Any]:
     return {
         CONF_HOST: camera.ip,
-        CONF_NVS_PORT: camera.server_port or DEFAULT_NVS_PORT,
+        CONF_NVS_PORT: DEFAULT_NVS_PORT,
         CONF_HTTP_PORT: camera.http_port or DEFAULT_HTTP_PORT,
     }
 
 
 class SannceConfigFlow(ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         self._input: dict[str, Any] = {}

@@ -1,7 +1,7 @@
 default_config:
 
 homeassistant:
-  internal_url: http://172.31.250.20:8123
+  internal_url: !env_var BENCH_INTERNAL_URL http://172.31.250.20:8123
 
 logger:
   default: warning

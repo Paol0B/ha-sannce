@@ -1,8 +1,17 @@
 import asyncio
+import dataclasses
 import sys
 import types
-from collections.abc import AsyncIterable, Callable, Generator, Iterable, Iterator
+from collections.abc import (
+    AsyncIterable,
+    Callable,
+    Generator,
+    Iterable,
+    Iterator,
+    Mapping,
+)
 from contextlib import contextmanager, suppress
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -22,7 +31,17 @@ from custom_components.sannce.const import CONF_SERIAL, DOMAIN
 
 from . import HOST, PASSWORD, USERNAME
 
-ALL_CAPS = ("light_mode", "motion", "person", "talk", "vehicle", "white_light")
+ALL_CAPS = (
+    "light_mode",
+    "motion",
+    "person",
+    "siren",
+    "siren_on_event",
+    "speaker",
+    "vehicle",
+    "volume",
+    "white_light",
+)
 RTSP_PATHS = {"main": "/1/1", "sub": "/1/2"}
 
 
@@ -36,10 +55,19 @@ class FakeSannceCamera:
         self.info = info or lib.CameraInfo(firmware="1.0.0")
         self.caps = frozenset(caps)
         self.available = False
-        self.light_on = False
+        self.floodlight_on = False
+        self.brightness: int | None = 100
         self.light_mode = "infrared"
-        self.detection = lib.Detection(person=True, vehicle=True, motion=True)
+        self.detection = lib.Detection(
+            person=True, vehicle=True, motion=False, sensitivity=76
+        )
+        self.volume = 80
+        self.siren_on_event = False
+        self.sound_count = 3
+        self.sounds: list[tuple[int, int]] = []
         self.played: list[bytes] = []
+        # a play waits after each chunk until the gate is set
+        self.audio_gate: asyncio.Event | None = None
         self.talk_active = False
         self.talk_starts = 0
         self.talk_stops = 0
@@ -49,12 +77,23 @@ class FakeSannceCamera:
 
         self.connect = AsyncMock(side_effect=self._connect)
         self.close = AsyncMock(side_effect=self._close)
-        self.get_light = AsyncMock(side_effect=lambda: self.light_on)
-        self.set_light = AsyncMock(side_effect=self._set_light)
+        self.get_floodlight = AsyncMock(
+            side_effect=lambda: lib.Floodlight(
+                on=self.floodlight_on, brightness=self.brightness
+            )
+        )
+        self.set_floodlight = AsyncMock(side_effect=self._set_floodlight)
         self.get_light_mode = AsyncMock(side_effect=lambda: self.light_mode)
         self.set_light_mode = AsyncMock(side_effect=self._set_light_mode)
         self.get_detection = AsyncMock(side_effect=lambda: self.detection)
         self.set_detection = AsyncMock(side_effect=self._set_detection)
+        self.set_sensitivity = AsyncMock(side_effect=self._set_sensitivity)
+        self.get_volume = AsyncMock(side_effect=lambda: self.volume)
+        self.set_volume = AsyncMock(side_effect=self._set_volume)
+        self.get_siren_on_event = AsyncMock(side_effect=lambda: self.siren_on_event)
+        self.set_siren_on_event = AsyncMock(side_effect=self._set_siren_on_event)
+        self.play_sound = AsyncMock(side_effect=self._play_sound)
+        self.stop_sound = AsyncMock(side_effect=self._stop_sound)
         self.play_audio = AsyncMock(side_effect=self._play_audio)
 
     def rtsp_url(self, stream: str = "main") -> str:
@@ -94,8 +133,18 @@ class FakeSannceCamera:
     async def _close(self) -> None:
         self.set_available(False)
 
-    async def _set_light(self, on: bool) -> None:
-        self.light_on = on
+    async def _set_floodlight(
+        self, on: bool, *, brightness: int | None = None, base_mode: str = "smart"
+    ) -> None:
+        if not on:
+            self.floodlight_on = False
+            self.light_mode = base_mode
+            return
+        self.floodlight_on = True
+        if self.light_mode != "custom":
+            self.light_mode = "color"
+        if brightness is not None:
+            self.brightness = brightness
 
     async def _set_light_mode(self, mode: str) -> None:
         self.light_mode = mode
@@ -107,11 +156,27 @@ class FakeSannceCamera:
         vehicle: bool | None = None,
         motion: bool | None = None,
     ) -> None:
-        self.detection = lib.Detection(
+        self.detection = dataclasses.replace(
+            self.detection,
             person=self.detection.person if person is None else person,
             vehicle=self.detection.vehicle if vehicle is None else vehicle,
             motion=self.detection.motion if motion is None else motion,
         )
+
+    async def _set_sensitivity(self, level: int) -> None:
+        self.detection = dataclasses.replace(self.detection, sensitivity=level)
+
+    async def _set_volume(self, volume: int) -> None:
+        self.volume = volume
+
+    async def _set_siren_on_event(self, on: bool) -> None:
+        self.siren_on_event = on
+
+    async def _play_sound(self, sample: int) -> None:
+        self.sounds.append((sample, 1))
+
+    async def _stop_sound(self, sample: int) -> None:
+        self.sounds.append((sample, 0))
 
     async def _play_audio(self, pcm: AsyncIterable[bytes]) -> None:
         if self.talk_active:
@@ -121,9 +186,23 @@ class FakeSannceCamera:
         try:
             async for chunk in pcm:
                 self.played.append(chunk)
+                if self.audio_gate is not None:
+                    await self.audio_gate.wait()
         finally:
             self.talk_active = False
             self.talk_stops += 1
+
+
+class FakeRelay:
+    def __init__(self, data: Mapping[str, Any], number: int = 0) -> None:
+        self.data = data
+        self.port = 0
+        self._number = number
+        self.start = AsyncMock(side_effect=self._start)
+        self.close = AsyncMock()
+
+    async def _start(self) -> None:
+        self.port = 18554 + self._number
 
 
 class FakeProcess:
@@ -237,6 +316,19 @@ def mock_find_camera() -> Generator[AsyncMock]:
         "custom_components.sannce.lib.find_camera", AsyncMock(return_value=None)
     ) as find_camera:
         yield find_camera
+
+
+# the HA test plugin blocks sockets, and every setup starts a relay
+@pytest.fixture(autouse=True)
+def mock_relays() -> Generator[list[FakeRelay]]:
+    relays: list[FakeRelay] = []
+
+    def create(data: Mapping[str, Any]) -> FakeRelay:
+        relays.append(FakeRelay(data, len(relays)))
+        return relays[-1]
+
+    with patch("custom_components.sannce.lib.create_relay", side_effect=create):
+        yield relays
 
 
 @pytest.fixture

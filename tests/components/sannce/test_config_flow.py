@@ -41,10 +41,10 @@ from custom_components.sannce.const import (
 )
 
 from . import HOST, PASSWORD, USERNAME, setup_integration
-from .conftest import FakeSannceCamera
+from .conftest import FakeRelay, FakeSannceCamera
 
 USER_INPUT = {CONF_HOST: HOST, CONF_USERNAME: USERNAME, CONF_PASSWORD: PASSWORD}
-DEFAULT_PORTS = {CONF_NVS_PORT: 3000, CONF_HTTP_PORT: 80, CONF_RTSP_PORT: 554}
+DEFAULT_PORTS = {CONF_NVS_PORT: 3002, CONF_HTTP_PORT: 80, CONF_RTSP_PORT: 554}
 SERIAL = "SN0000000001"
 MAC = "00:00:5E:00:53:2A"
 NEW_HOST = "192.168.1.20"
@@ -92,7 +92,7 @@ def discovered(**fields: Any) -> lib.DiscoveredCamera:
         "serial": SERIAL,
         "model": "I91FW",
         "http_port": 8080,
-        "server_port": 3001,
+        "server_port": 3000,
         "channels": 1,
     }
     return lib.DiscoveredCamera(**(values | fields))
@@ -244,6 +244,7 @@ async def test_config_flow_default_ports(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == USER_INPUT | DEFAULT_PORTS
+    assert result["result"].version == 2
 
 
 async def test_config_flow_uses_model_and_serial(
@@ -448,7 +449,7 @@ async def test_config_flow_discovery(
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
     assert suggested(result)[CONF_HOST] == HOST
-    assert suggested(result)[CONF_NVS_PORT] == 3001
+    assert suggested(result)[CONF_NVS_PORT] == 3002
     assert suggested(result)[CONF_HTTP_PORT] == 8080
 
     login = {CONF_USERNAME: USERNAME, CONF_PASSWORD: PASSWORD}
@@ -458,14 +459,13 @@ async def test_config_flow_discovery(
     assert result["title"] == "I91FW"
     assert result["result"].unique_id == SERIAL
     assert result["data"] == USER_INPUT | DEFAULT_PORTS | identity | {
-        CONF_NVS_PORT: 3001,
         CONF_HTTP_PORT: 8080,
     }
     mock_camera_class.assert_called_once_with(
         HOST,
         USERNAME,
         PASSWORD,
-        nvs_port=3001,
+        nvs_port=3002,
         http_port=8080,
         rtsp_port=554,
         session=async_get_clientsession(hass),
@@ -675,6 +675,7 @@ async def test_reconfigure_moves_the_entry_to_a_new_address(
     mock_camera_class: MagicMock,
     mock_camera: FakeSannceCamera,
     mock_find_camera: AsyncMock,
+    mock_relays: list[FakeRelay],
 ) -> None:
     entry = camera_entry(model="I91FW", serial=SERIAL, mac=MAC)
     result = await start_reconfigure(hass, entry)
@@ -696,6 +697,9 @@ async def test_reconfigure_moves_the_entry_to_a_new_address(
     assert entry.state is ConfigEntryState.LOADED
     assert mock_camera_class.call_args.args == (NEW_HOST, USERNAME, PASSWORD)
     mock_find_camera.assert_awaited_once_with(NEW_HOST)
+    old, new = mock_relays
+    old.close.assert_awaited_once()
+    assert (old.data[CONF_HOST], new.data[CONF_HOST]) == (HOST, NEW_HOST)
 
 
 async def test_reconfigure_changes_the_login_and_the_ports(
@@ -1046,14 +1050,14 @@ async def test_dhcp_adds_a_new_camera_after_the_login(
     assert result["title"] == "I91FW"
     assert result["result"].unique_id == SERIAL
     assert result["data"] == USER_INPUT | {
-        CONF_NVS_PORT: 3001,
+        CONF_NVS_PORT: 3002,
         CONF_HTTP_PORT: 8080,
         CONF_RTSP_PORT: 554,
         CONF_MODEL: "I91FW",
         CONF_SERIAL: SERIAL,
         CONF_MAC: MAC,
     }
-    assert mock_camera_class.call_args.kwargs["nvs_port"] == 3001
+    assert mock_camera_class.call_args.kwargs["nvs_port"] == 3002
 
 
 async def test_dhcp_confirm_shows_a_failed_login(

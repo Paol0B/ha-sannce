@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -25,12 +26,16 @@ async def silence(hass, camera, entry):
     await camera.wait_quiet()
 
 
-async def recorded_seconds(camera):
-    return wav_seconds(await camera.audio())
+async def sound_count(camera):
+    return len((await camera.state())["sounds"])
 
 
-async def play_tone(hass, entry):
-    (MEDIA_DIR / TONE_FILE).write_bytes(tone_wav(440, 1.0))
+async def sounds_since(camera, count):
+    return (await camera.state())["sounds"][count:]
+
+
+async def play_tone(hass, entry, seconds=1.0):
+    (MEDIA_DIR / TONE_FILE).write_bytes(tone_wav(440, seconds))
     await hass.call(
         "media_player",
         "play_media",
@@ -40,43 +45,44 @@ async def play_tone(hass, entry):
     )
 
 
-@pytest.mark.parametrize(
-    ("tone", "low", "high"), [("alarm", 800, 1000), ("chime", 1046, 1318)]
-)
-async def test_the_siren_plays_its_tone_for_the_duration(
-    hass, camera, entry, tone, low, high
+async def test_the_alarm_tone_plays_800_and_1000_hz_for_its_duration(
+    hass, camera, entry
 ):
     siren = entry.entity_ids["siren"]
+    before = await sound_count(camera)
 
-    await hass.call("siren", "turn_on", siren, tone=tone, duration=2)
+    await hass.call("siren", "turn_on", siren, tone="alarm", duration=2)
     await hass.wait_state(siren, "off", timeout=10)
 
     rate, samples = read_wav(await camera.audio())
     assert len(samples) == 2 * rate
-    others = [freq for freq in (440, 800, 1000, 1046, 1318) if freq not in (low, high)]
-    wanted = min(power(samples, rate, low), power(samples, rate, high))
+    wanted = min(power(samples, rate, 800), power(samples, rate, 1000))
+    others = (440, 600, 1200, 1500)
     assert wanted > 100 * max(power(samples, rate, freq) for freq in others)
+    assert await sounds_since(camera, before) == []
 
 
-async def test_turning_the_siren_off_stops_the_sound(hass, camera, entry):
+async def test_a_siren_shorter_than_the_replay_plays_its_sound_once(
+    hass, camera, entry
+):
     siren = entry.entity_ids["siren"]
-    await hass.call("siren", "turn_on", siren, tone="alarm", duration=10)
-    # until this talk session starts, the camera still holds the last recording
-    await wait_for(
-        camera.state, lambda state: state["talking"], 5, "waiting for the siren"
-    )
-    await wait_for(
-        lambda: recorded_seconds(camera),
-        lambda seconds: seconds >= 1,
-        5,
-        "waiting for 1 s of siren",
-    )
+    before = await sound_count(camera)
 
+    await hass.call("siren", "turn_on", siren, tone="sound_2", duration=2)
+    await hass.wait_state(siren, "off", timeout=10)
+
+    assert await sounds_since(camera, before) == [[1, 1]]
+
+
+async def test_turning_the_siren_off_stops_its_sound(hass, camera, entry):
+    siren = entry.entity_ids["siren"]
+    before = await sound_count(camera)
+
+    await hass.call("siren", "turn_on", siren, tone="sound_1")
     await hass.call("siren", "turn_off", siren)
 
     await hass.wait_state(siren, "off", timeout=5)
-    assert (await camera.state())["talking"] is False
-    assert 1 <= await recorded_seconds(camera) < 3
+    assert await sounds_since(camera, before) == [[0, 1], [0, 0]]
 
 
 async def test_the_speaker_plays_a_media_file(hass, camera, entry):
@@ -106,26 +112,27 @@ async def test_a_busy_talk_channel_fails_the_play_with_a_readable_error(
 ):
     await camera.talk_busy(True)
 
-    with pytest.raises(CommandError, match="refused talk") as failure:
+    with pytest.raises(CommandError, match="refused the audio channel") as failure:
         await play_tone(hass, entry)
 
     assert failure.value.code == "home_assistant_error"
 
 
-async def test_stopping_the_speaker_leaves_the_siren_playing(hass, camera, entry):
+async def test_the_speaker_and_the_siren_work_at_the_same_time(hass, camera, entry):
     siren = entry.entity_ids["siren"]
-    await hass.call("siren", "turn_on", siren, tone="alarm", duration=10)
-    await wait_for(
-        camera.state, lambda state: state["talking"], 5, "waiting for the siren"
-    )
+    before = await sound_count(camera)
 
-    await hass.call("media_player", "media_stop", entry.entity_ids["speaker"])
+    async with asyncio.TaskGroup() as group:
+        group.create_task(play_tone(hass, entry, seconds=3))
+        await wait_for(
+            camera.state, lambda state: state["talking"], 5, "waiting for the speaker"
+        )
+        # the play holds the websocket until it ends, so use the REST API
+        await hass.request(
+            "POST",
+            "/api/services/siren/turn_on",
+            {"entity_id": siren, "tone": "sound_1", "duration": 2},
+        )
 
-    stopped_at = await recorded_seconds(camera)
-    await wait_for(
-        lambda: recorded_seconds(camera),
-        lambda seconds: seconds >= stopped_at + 0.5,
-        5,
-        "waiting for more siren audio",
-    )
-    assert await hass.state(siren) == "on"
+    assert abs(wav_seconds(await camera.audio()) - 3) <= 0.05
+    assert await sounds_since(camera, before) == [[0, 1]]

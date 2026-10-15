@@ -12,10 +12,11 @@ hassfest_image="ghcr.io/home-assistant/hassfest@sha256:4b1adfb1e0a37710af0390708
 usage() {
   cat >&2 <<'USAGE'
 usage: bench.sh COMMAND
-  up                   build and start the bench, onboard Home Assistant, add the camera
+  up [--host-network]  build and start the bench, onboard Home Assistant, add the camera
+                       --host-network puts Home Assistant on the host network, for WebRTC in a browser
   down                 stop the bench, keep the Home Assistant state
-  reset                stop, wipe bench/ha-config, start fresh
-  test                 reset, then run the end-to-end suite and hassfest
+  reset                stop, wipe bench/ha-config, start fresh (bridge network)
+  test                 reset, then run the end-to-end suite and hassfest (bridge network)
   event KIND [on|off]  push a camera event: motion vehicle intrusion line tamper video_loss
   audio FILE           save the last talk session as WAV
   hassfest             validate custom_components/sannce
@@ -71,7 +72,12 @@ run_suite() {
 command=$1
 shift
 case $command in
-  up) [[ $# -eq 0 ]] || usage; need_python; start ;;
+  up)
+    [[ $# -eq 0 || ( $# -eq 1 && $1 == --host-network ) ]] || usage
+    need_python
+    [[ $# -eq 0 ]] || compose+=(-f "$bench/compose.hostnet.yaml")
+    start
+    ;;
   down) [[ $# -eq 0 ]] || usage; "${compose[@]}" down ;;
   reset) [[ $# -eq 0 ]] || usage; need_python; wipe; start ;;
   test) [[ $# -eq 0 ]] || usage; need_python; run_suite ;;

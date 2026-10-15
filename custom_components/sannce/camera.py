@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from homeassistant.components.camera import (
     Camera,
@@ -8,6 +9,7 @@ from homeassistant.components.camera import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .const import RELAY_HOST
 from .coordinator import SannceConfigEntry, SannceCoordinator
 from .entity import SannceEntity
 
@@ -21,12 +23,7 @@ class SannceCameraDescription(CameraEntityDescription):
 
 CAMERAS = (
     SannceCameraDescription(key="sub", translation_key="sub", stream="sub"),
-    SannceCameraDescription(
-        key="main",
-        translation_key="main",
-        stream="main",
-        entity_registry_enabled_default=False,
-    ),
+    SannceCameraDescription(key="main", translation_key="main", stream="main"),
 )
 
 
@@ -56,4 +53,8 @@ class SannceCameraEntity(SannceEntity, Camera):
         return True
 
     async def stream_source(self) -> str:
-        return self.coordinator.camera.rtsp_url(self.entity_description.stream)
+        # go2rtc repeats a backchannel SETUP the camera refuses; the relay answers it
+        url = urlsplit(self.coordinator.camera.rtsp_url(self.entity_description.stream))
+        login = url.netloc.rpartition("@")[0]
+        netloc = f"{login}@{RELAY_HOST}:{self.coordinator.relay.port}"
+        return url._replace(netloc=netloc).geturl()

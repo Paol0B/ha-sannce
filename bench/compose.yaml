@@ -9,7 +9,7 @@ services:
     build:
       context: ..
       dockerfile: bench/camera/Dockerfile
-    command: ["--user", *camera-user, "--pass", *camera-password]
+    command: ["--user", *camera-user, "--pass", *camera-password, "--rtsp-port", "554"]
     init: true
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 0
@@ -30,11 +30,22 @@ services:
 
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:2026.10.1
+    # Home Assistant reads http: from YAML only on its first start, so the script sets the bind address in its store
+    entrypoint: ["/bin/sh", "-c", "python3 /bench/http_bind.py && exec /init"]
     depends_on:
       - camera
+    environment:
+      BENCH_INTERNAL_URL: http://172.31.250.20:8123
+      BENCH_SERVER_HOST: ""
     ports:
       - "127.0.0.1:8123:8123"
     volumes:
+      - type: bind
+        source: ./http_bind.py
+        target: /bench/http_bind.py
+        read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: ./ha-config
         target: /config

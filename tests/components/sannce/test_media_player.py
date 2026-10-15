@@ -15,6 +15,7 @@ from homeassistant.components.media_player import (
     MediaType,
 )
 from homeassistant.components.media_source import Unresolvable
+from homeassistant.components.siren import ATTR_TONE
 from homeassistant.components.siren import DOMAIN as SIREN_DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -165,6 +166,24 @@ async def test_failed_play_returns_to_idle(
     assert hass.states.get(speaker).state == MediaPlayerState.IDLE
 
 
+@pytest.mark.usefixtures("translations")
+async def test_a_refused_backchannel_fails_the_play_with_the_reason(
+    hass: HomeAssistant, speaker: str, mock_camera: FakeSannceCamera
+) -> None:
+    mock_camera.play_audio.side_effect = lib.TalkBusyError(
+        "the camera refused the audio channel: RTSP 453"
+    )
+    proc = FakeProcess(b"\0" * 320, eof=True, exit_code=0)
+
+    with (
+        ffmpeg_running(proc),
+        pytest.raises(HomeAssistantError, match="refused the audio channel: RTSP 453"),
+    ):
+        await play_media(hass, speaker, "http://host/tone.wav")
+
+    assert hass.states.get(speaker).state == MediaPlayerState.IDLE
+
+
 async def test_ffmpeg_failure_fails_the_play_media_call(
     hass: HomeAssistant, speaker: str
 ) -> None:
@@ -237,7 +256,7 @@ async def test_media_stop_cancels_the_play(
     assert mock_camera.talk_active is False
 
 
-async def test_media_stop_leaves_the_siren_playing(
+async def test_media_stop_leaves_a_built_in_siren_sound_playing(
     hass: HomeAssistant,
     identified_entry: MockConfigEntry,
     speaker: str,
@@ -247,28 +266,20 @@ async def test_media_stop_leaves_the_siren_playing(
     siren = entity_registry.async_get_entity_id(
         SIREN_DOMAIN, DOMAIN, f"{identified_entry.unique_id}_siren"
     )
-    sounding = asyncio.Event()
-    release = asyncio.Event()
-
-    async def hold(pcm: AsyncIterable[bytes]) -> None:
-        async for _ in pcm:
-            sounding.set()
-            await release.wait()
-
-    mock_camera.play_audio.side_effect = hold
     await hass.services.async_call(
-        SIREN_DOMAIN, SERVICE_TURN_ON, {ATTR_ENTITY_ID: siren}, blocking=True
+        SIREN_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: siren, ATTR_TONE: "sound_1"},
+        blocking=True,
     )
-    await sounding.wait()
 
     await hass.services.async_call(
         MP_DOMAIN, SERVICE_MEDIA_STOP, {ATTR_ENTITY_ID: speaker}, blocking=True
     )
     await hass.async_block_till_done()
 
-    assert identified_entry.runtime_data.audio.playing is True
+    mock_camera.stop_sound.assert_not_awaited()
     assert hass.states.get(siren).state == STATE_ON
-    release.set()
 
 
 async def test_speaker_follows_the_connection(
@@ -282,10 +293,10 @@ async def test_speaker_follows_the_connection(
 
 @pytest.mark.parametrize(
     "caps",
-    [tuple(cap for cap in ALL_CAPS if cap != "talk"), ()],
-    ids=["no_talk", "none"],
+    [tuple(cap for cap in ALL_CAPS if cap != "speaker"), ()],
+    ids=["no_backchannel", "none"],
 )
-async def test_no_speaker_without_the_talk_cap(
+async def test_no_speaker_without_a_backchannel(
     hass: HomeAssistant,
     identified_entry: MockConfigEntry,
     mock_camera: FakeSannceCamera,

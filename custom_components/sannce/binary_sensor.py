@@ -19,39 +19,52 @@ PARALLEL_UPDATES = 0
 @dataclass(frozen=True, kw_only=True)
 class SannceBinarySensorDescription(BinarySensorEntityDescription):
     caps: frozenset[str] = frozenset()
+    kinds: frozenset[str]
+    needs_smart_filter: bool = False
 
 
-# keys are library event kinds. A person arrives as motion, so there is no person
-# sensor. Only motion and vehicle have a capability to check; the rest always exist,
-# so they start disabled: the I91FW may never send those events.
+# a person arrives as MOTIONDETECT while all-motion is off (protocol.md, Start and stop)
 EVENT_SENSORS = (
     SannceBinarySensorDescription(
         key="motion",
         device_class=BinarySensorDeviceClass.MOTION,
-        caps=frozenset({"motion", "person"}),
+        caps=frozenset({"motion", "person", "vehicle"}),
+        kinds=frozenset({"motion", "vehicle"}),
+    ),
+    SannceBinarySensorDescription(
+        key="person",
+        translation_key="person",
+        device_class=BinarySensorDeviceClass.MOTION,
+        caps=frozenset({"person"}),
+        kinds=frozenset({"motion"}),
+        needs_smart_filter=True,
     ),
     SannceBinarySensorDescription(
         key="vehicle",
         translation_key="vehicle",
         device_class=BinarySensorDeviceClass.MOTION,
         caps=frozenset({"vehicle"}),
+        kinds=frozenset({"vehicle"}),
     ),
     SannceBinarySensorDescription(
         key="intrusion",
         translation_key="intrusion",
         device_class=BinarySensorDeviceClass.MOTION,
         entity_registry_enabled_default=False,
+        kinds=frozenset({"intrusion"}),
     ),
     SannceBinarySensorDescription(
         key="line",
         translation_key="line",
         device_class=BinarySensorDeviceClass.MOTION,
         entity_registry_enabled_default=False,
+        kinds=frozenset({"line"}),
     ),
     SannceBinarySensorDescription(
         key="tamper",
         device_class=BinarySensorDeviceClass.TAMPER,
         entity_registry_enabled_default=False,
+        kinds=frozenset({"tamper"}),
     ),
     SannceBinarySensorDescription(
         key="video_loss",
@@ -59,6 +72,7 @@ EVENT_SENSORS = (
         device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
+        kinds=frozenset({"video_loss"}),
     ),
 )
 
@@ -84,11 +98,20 @@ class SannceEventSensor(SannceEntity, BinarySensorEntity):
         self, coordinator: SannceCoordinator, description: SannceBinarySensorDescription
     ) -> None:
         super().__init__(coordinator, description)
-        self._active_channels: set[int] = set()
+        self._active: set[tuple[str, int]] = set()
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        if not self.entity_description.needs_smart_filter:
+            return True
+        detection = self.coordinator.data.detection
+        return detection is None or not detection.motion
 
     @property
     def is_on(self) -> bool:
-        return bool(self._active_channels)
+        return bool(self._active)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -98,10 +121,11 @@ class SannceEventSensor(SannceEntity, BinarySensorEntity):
 
     @callback
     def _handle_event(self, event: lib.Event) -> None:
-        if event.kind != self.entity_description.key:
+        if event.kind not in self.entity_description.kinds:
             return
+        key = (event.kind, event.channel)
         if event.active:
-            self._active_channels.add(event.channel)
+            self._active.add(key)
         else:
-            self._active_channels.discard(event.channel)
+            self._active.discard(key)
         self.async_write_ha_state()

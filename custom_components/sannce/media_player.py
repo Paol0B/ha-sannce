@@ -31,7 +31,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    if "talk" in coordinator.camera.caps:
+    if "speaker" in coordinator.camera.caps:
         async_add_entities([SannceSpeaker(coordinator, SPEAKER)])
 
 
@@ -78,7 +78,6 @@ class SannceSpeaker(SannceEntity, MediaPlayerEntity):
                 self.async_write_ha_state()
 
     async def async_media_stop(self) -> None:
-        # the siren shares the speaker; leave its tone playing
         await self.coordinator.audio.stop(owner=self)
 
     async def async_browse_media(

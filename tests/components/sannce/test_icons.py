@@ -35,7 +35,7 @@ def test_every_icon_is_a_material_design_icon() -> None:
         for icon in [entity["default"], *entity.get("state", {}).values()]
     ]
 
-    assert len(icons) == 14
+    assert len(icons) == 18
     assert all(icon.startswith("mdi:") for icon in icons)
 
 

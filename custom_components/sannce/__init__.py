@@ -3,7 +3,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from . import lib
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_NVS_PORT, DEFAULT_NVS_PORT, DOMAIN, LEGACY_NVS_PORT, PLATFORMS
 from .coordinator import SannceConfigEntry, SannceCoordinator
 
 
@@ -29,12 +29,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: SannceConfigEntry) -> bo
 
     entry.async_on_unload(camera.close)
     await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.relay.start()
+    except OSError as err:
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="relay_failed",
+            translation_placeholders={"host": host, "error": str(err)},
+        ) from err
+    entry.async_on_unload(coordinator.relay.close)
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: SannceConfigEntry) -> bool:
+    if entry.version > 2:
+        return False
+    if entry.version == 1:
+        data = dict(entry.data)
+        if data.get(CONF_NVS_PORT) == LEGACY_NVS_PORT:
+            data[CONF_NVS_PORT] = DEFAULT_NVS_PORT
+        hass.config_entries.async_update_entry(entry, data=data, version=2)
+    return True
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: SannceConfigEntry) -> bool:
-    # end talk while the camera is connected: camera.close runs after this
+    # stop the speaker while the camera is connected: camera.close runs after this
     await entry.runtime_data.audio.stop()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

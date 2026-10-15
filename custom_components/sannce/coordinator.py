@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
 
@@ -16,15 +16,18 @@ from .const import DOMAIN, UPDATE_INTERVAL
 _LOGGER = logging.getLogger(__name__)
 
 _DETECTION_CAPS = frozenset({"motion", "person", "vehicle"})
+LIGHT_MODES = ("infrared", "color", "smart")
 
 type SannceConfigEntry = ConfigEntry[SannceCoordinator]
 
 
 @dataclass(frozen=True)
 class SannceData:
-    light: bool | None
+    floodlight: lib.Floodlight | None
     light_mode: str | None
     detection: lib.Detection | None
+    volume: int | None
+    siren_on_event: bool | None
 
 
 class SannceCoordinator(DataUpdateCoordinator[SannceData]):
@@ -45,8 +48,12 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
             always_update=False,
         )
         self.camera = camera
+        self.relay = lib.create_relay(config_entry.data)
         self.audio = AudioPlayer(self)
         self.connected = False
+        self.base_mode: str | None = None
+        self._floodlight_commands = 0
+        self._floodlight_starts = 0
         self._event_listeners: list[Callable[[lib.Event], None]] = []
         camera.on_availability(self._handle_availability)
         camera.on_login_failed(self._handle_login_failed)
@@ -59,19 +66,40 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
         self._event_listeners.append(listener)
         return partial(self._event_listeners.remove, listener)
 
+    async def async_floodlight_command(self, command: Awaitable[None]) -> None:
+        self._floodlight_commands += 1
+        self._floodlight_starts += 1
+        try:
+            await command
+        finally:
+            self._floodlight_commands -= 1
+
     async def _async_update_data(self) -> SannceData:
+        # a poll that overlaps a floodlight command can read its color-mode step
+        idle = self._floodlight_commands == 0
+        starts = self._floodlight_starts
         camera = self.camera
         caps = camera.caps
         host = self.config_entry.data[CONF_HOST]
         # a setting the camera lacks would fail every poll
         try:
-            return SannceData(
-                light=await camera.get_light() if "white_light" in caps else None,
+            data = SannceData(
+                floodlight=(
+                    await camera.get_floodlight()
+                    if {"white_light", "light_mode"} <= caps
+                    else None
+                ),
                 light_mode=(
                     await camera.get_light_mode() if "light_mode" in caps else None
                 ),
                 detection=(
                     await camera.get_detection() if caps & _DETECTION_CAPS else None
+                ),
+                volume=await camera.get_volume() if "volume" in caps else None,
+                siren_on_event=(
+                    await camera.get_siren_on_event()
+                    if "siren_on_event" in caps
+                    else None
                 ),
             )
         except lib.AuthError as err:
@@ -86,6 +114,12 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
                 translation_key="settings_read_failed",
                 translation_placeholders={"host": host, "error": str(err)},
             ) from err
+        # while the floodlight is forced on, the camera mode is not the user's choice
+        forced_on = data.floodlight is not None and data.floodlight.on
+        overlapped = not idle or starts != self._floodlight_starts
+        if data.light_mode in LIGHT_MODES and not forced_on and not overlapped:
+            self.base_mode = data.light_mode
+        return data
 
     @callback
     def _handle_availability(self, available: bool) -> None:

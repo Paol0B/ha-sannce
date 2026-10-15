@@ -12,6 +12,7 @@ from .const import (
     DEFAULT_HTTP_PORT,
     DEFAULT_NVS_PORT,
     DEFAULT_RTSP_PORT,
+    RELAY_HOST,
 )
 from .sannce_aio import (
     AuthError,
@@ -20,7 +21,9 @@ from .sannce_aio import (
     Detection,
     DiscoveredCamera,
     Event,
+    Floodlight,
     ProtocolError,
+    RtspRelay,
     SannceCamera,
     SannceError,
     TalkBusyError,
@@ -35,11 +38,14 @@ __all__ = [
     "Detection",
     "DiscoveredCamera",
     "Event",
+    "Floodlight",
     "ProtocolError",
+    "RtspRelay",
     "SannceCamera",
     "SannceError",
     "TalkBusyError",
     "create_camera",
+    "create_relay",
     "discover",
     "find_camera",
 ]
@@ -54,4 +60,12 @@ def create_camera(hass: HomeAssistant, data: Mapping[str, Any]) -> SannceCamera:
         http_port=data.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT),
         rtsp_port=data.get(CONF_RTSP_PORT, DEFAULT_RTSP_PORT),
         session=async_get_clientsession(hass),
+    )
+
+
+def create_relay(data: Mapping[str, Any]) -> RtspRelay:
+    return RtspRelay(
+        data[CONF_HOST],
+        data.get(CONF_RTSP_PORT, DEFAULT_RTSP_PORT),
+        listen_host=RELAY_HOST,
     )

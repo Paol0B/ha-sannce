@@ -9,9 +9,10 @@ from custom_components.sannce.camera import CAMERAS
 from custom_components.sannce.const import PLATFORMS
 from custom_components.sannce.light import FLOODLIGHT
 from custom_components.sannce.media_player import SPEAKER
+from custom_components.sannce.number import NUMBERS
 from custom_components.sannce.select import LIGHT_MODE
 from custom_components.sannce.siren import SIREN
-from custom_components.sannce.switch import DETECTION_SWITCHES
+from custom_components.sannce.switch import SWITCHES
 
 STRINGS = json.loads((Path(integration.__file__).parent / "strings.json").read_text())
 DESCRIPTIONS = {
@@ -19,9 +20,10 @@ DESCRIPTIONS = {
     "camera": CAMERAS,
     "light": (FLOODLIGHT,),
     "media_player": (SPEAKER,),
+    "number": NUMBERS,
     "select": (LIGHT_MODE,),
     "siren": (SIREN,),
-    "switch": DETECTION_SWITCHES,
+    "switch": SWITCHES,
 }
 
 

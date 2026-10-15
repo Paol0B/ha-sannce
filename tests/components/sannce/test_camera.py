@@ -1,12 +1,12 @@
 from unittest.mock import patch
 
+import pytest
 from homeassistant.components.camera import (
     CameraEntityFeature,
     CameraState,
     async_get_image,
     async_get_stream_source,
 )
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
     ATTR_FRIENDLY_NAME,
     ATTR_SUPPORTED_FEATURES,
@@ -19,17 +19,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
-from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sannce import lib
 from custom_components.sannce.const import DOMAIN
 
 from . import HOST, PASSWORD, USERNAME, setup_integration
-from .conftest import FakeSannceCamera
+from .conftest import FakeRelay, FakeSannceCamera
 
-SUB_URL = f"rtsp://{USERNAME}:{PASSWORD}@{HOST}:554/1/2"
-MAIN_URL = f"rtsp://{USERNAME}:{PASSWORD}@{HOST}:554/1/1"
+
+def relay_url(relay: FakeRelay, path: str) -> str:
+    return f"rtsp://{USERNAME}:{PASSWORD}@127.0.0.1:{relay.port}{path}"
 
 
 def camera_id(registry: er.EntityRegistry, entry: MockConfigEntry, key: str) -> str:
@@ -40,7 +40,7 @@ def camera_id(registry: er.EntityRegistry, entry: MockConfigEntry, key: str) -> 
     return entity_id
 
 
-async def test_sub_camera_is_enabled_and_main_is_not(
+async def test_both_cameras_are_enabled_by_default(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
     mock_camera: FakeSannceCamera,
@@ -48,45 +48,39 @@ async def test_sub_camera_is_enabled_and_main_is_not(
 ) -> None:
     await setup_integration(hass, mock_config_entry)
 
-    sub_id = camera_id(entity_registry, mock_config_entry, "sub")
-    main_id = camera_id(entity_registry, mock_config_entry, "main")
-    assert entity_registry.async_get(sub_id).disabled_by is None
-    assert (
-        entity_registry.async_get(main_id).disabled_by
-        is RegistryEntryDisabler.INTEGRATION
-    )
-    assert hass.states.get(sub_id).state == CameraState.IDLE
-    assert hass.states.get(main_id) is None
+    for key in ("main", "sub"):
+        entity_id = camera_id(entity_registry, mock_config_entry, key)
+        assert entity_registry.async_get(entity_id).disabled_by is None
+        assert hass.states.get(entity_id).state == CameraState.IDLE
 
 
-async def test_sub_stream_source_is_the_sub_rtsp_url(
+async def test_clear_is_enabled_by_default(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    await setup_integration(hass, identified_entry)
+
+    assert hass.states.get("camera.i91fw_clear") is not None
+    assert hass.states.get("camera.i91fw_fluent") is not None
+
+
+@pytest.mark.parametrize(("key", "path"), [("sub", "/1/2"), ("main", "/1/1")])
+async def test_stream_source_goes_through_the_relay(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
     mock_camera: FakeSannceCamera,
+    mock_relays: list[FakeRelay],
     entity_registry: er.EntityRegistry,
+    key: str,
+    path: str,
 ) -> None:
     await setup_integration(hass, mock_config_entry)
 
-    sub_id = camera_id(entity_registry, mock_config_entry, "sub")
-    assert await async_get_stream_source(hass, sub_id) == SUB_URL
-
-
-async def test_main_camera_streams_the_main_rtsp_url_once_enabled(
-    hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
-    mock_camera: FakeSannceCamera,
-    entity_registry: er.EntityRegistry,
-) -> None:
-    await setup_integration(hass, mock_config_entry)
-    main_id = camera_id(entity_registry, mock_config_entry, "main")
-
-    entity_registry.async_update_entity(main_id, disabled_by=None)
-    await hass.config_entries.async_reload(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    assert mock_config_entry.state is ConfigEntryState.LOADED
-    assert hass.states.get(main_id).state == CameraState.IDLE
-    assert await async_get_stream_source(hass, main_id) == MAIN_URL
+    (relay,) = mock_relays
+    entity_id = camera_id(entity_registry, mock_config_entry, key)
+    assert relay.port > 0
+    assert await async_get_stream_source(hass, entity_id) == relay_url(relay, path)
 
 
 async def test_cameras_support_streaming(
@@ -130,9 +124,10 @@ async def test_camera_names_are_translated(
 
     sub_id = camera_id(entity_registry, identified_entry, "sub")
     main_id = camera_id(entity_registry, identified_entry, "main")
-    assert hass.states.get(sub_id).attributes[ATTR_FRIENDLY_NAME] == "I91FW Sub stream"
-    assert entity_registry.async_get(sub_id).original_name == "Sub stream"
-    assert entity_registry.async_get(main_id).original_name == "Main stream"
+    assert hass.states.get(sub_id).attributes[ATTR_FRIENDLY_NAME] == "I91FW Fluent"
+    assert hass.states.get(main_id).attributes[ATTR_FRIENDLY_NAME] == "I91FW Clear"
+    assert entity_registry.async_get(sub_id).original_name == "Fluent"
+    assert entity_registry.async_get(main_id).original_name == "Clear"
 
 
 async def test_cameras_share_one_device_per_entry(
@@ -245,7 +240,7 @@ async def test_failed_settings_poll_keeps_cameras_available(
 ) -> None:
     await setup_integration(hass, mock_config_entry)
     sub_id = camera_id(entity_registry, mock_config_entry, "sub")
-    mock_camera.get_light.side_effect = lib.ConnectError("unreachable")
+    mock_camera.get_floodlight.side_effect = lib.ConnectError("unreachable")
 
     await mock_config_entry.runtime_data.async_refresh()
     await hass.async_block_till_done()

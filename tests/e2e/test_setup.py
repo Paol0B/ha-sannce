@@ -1,3 +1,5 @@
+import json
+
 import pytest_asyncio
 
 from bench.hass_client import CAMERA_HOST
@@ -24,6 +26,15 @@ async def test_adding_by_ip_creates_the_entry_and_every_entity(hass, camera):
         MODEL,
         "loaded",
     )
+
+
+async def test_adding_by_ip_stores_the_default_ports(hass, camera):
+    entry = await add_by_ip(hass, camera)
+
+    text = await hass.text(f"/api/diagnostics/config_entry/{entry.entry_id}")
+
+    data = json.loads(text)["data"]["entry"]
+    assert (data["nvs_port"], data["http_port"], data["rtsp_port"]) == (3002, 80, 554)
 
 
 async def test_adding_by_ip_fills_the_identity_from_the_lan_search(hass, camera):
@@ -70,7 +81,7 @@ async def test_reconfigure_takes_a_new_password(hass, camera):
         "host": CAMERA_HOST,
         "username": login["user"],
         "password": "wrong-password",
-        "nvs_port": 3000,
+        "nvs_port": 3002,
         "http_port": 80,
         "rtsp_port": 554,
     }

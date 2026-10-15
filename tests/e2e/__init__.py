@@ -7,25 +7,14 @@ SERIAL = "SIM0000000001"
 MAC = "00:00:5E:00:53:01"
 ENTITY_KEYS = frozenset(
     {
-        "motion",
-        "vehicle",
-        "intrusion",
-        "line",
-        "tamper",
-        "video_loss",
-        "sub",
-        "main",
-        "floodlight",
-        "light_mode",
-        "person_detection",
-        "vehicle_detection",
-        "motion_detection",
-        "siren",
-        "speaker",
+        "motion", "person", "vehicle", "intrusion", "line", "tamper", "video_loss",
+        "sub", "main", "floodlight", "light_mode",
+        "person_detection", "vehicle_detection", "motion_detection", "siren_on_event",
+        "siren", "speaker", "volume", "motion_sensitivity",
     }
 )
 # these start disabled, so they have no state
-DISABLED_KEYS = frozenset({"main", "intrusion", "line", "tamper", "video_loss"})
+DISABLED_KEYS = frozenset({"intrusion", "line", "tamper", "video_loss"})
 
 
 @dataclass(frozen=True)

@@ -1,3 +1,5 @@
+import pytest
+
 from bench.hass_client import wait_for
 
 # start-of-frame markers: every 0xCn except DHT (C4), JPG (C8) and DAC (CC)
@@ -18,8 +20,14 @@ def jpeg_size(data: bytes) -> tuple[int, int]:
     raise AssertionError("the JPEG has no frame header")
 
 
-async def test_the_sub_snapshot_is_a_640x360_jpeg(hass, entry):
-    path = f"/api/camera_proxy/{entry.entity_ids['sub']}"
+async def test_the_main_stream_is_clear_and_the_sub_stream_fluent(entry):
+    assert entry.entity_ids["main"] == "camera.i91fw_sim_clear"
+    assert entry.entity_ids["sub"] == "camera.i91fw_sim_fluent"
+
+
+@pytest.mark.parametrize(("key", "size"), [("sub", (640, 360)), ("main", (1280, 720))])
+async def test_each_snapshot_is_a_jpeg_of_its_stream_size(hass, entry, key, size):
+    path = f"/api/camera_proxy/{entry.entity_ids[key]}"
 
     image = await wait_for(
         lambda: hass.fetch(path),
@@ -28,7 +36,7 @@ async def test_the_sub_snapshot_is_a_640x360_jpeg(hass, entry):
         "waiting for a snapshot",
     )
 
-    assert jpeg_size(image) == (640, 360)
+    assert jpeg_size(image) == size
 
 
 async def test_the_sub_stream_serves_an_hls_playlist(hass, entry):

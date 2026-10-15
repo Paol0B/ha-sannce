@@ -24,8 +24,9 @@ HACS_KEYS = {
     "zip_release",
 }
 VENDORED = "custom_components.sannce.sannce_aio"
-# IEEE MA-L assignments to Tiandy Technologies (standards-oui.ieee.org/oui/oui.txt)
-TIANDY_PREFIXES = ("3CDA6D", "BC516C", "E4E66C")
+# 3CDA6D, BC516C and E4E66C: IEEE MA-L assignments to Tiandy Technologies
+# (standards-oui.ieee.org/oui/oui.txt); D03BF4: the I91FX's own (docs/protocol.md)
+CAMERA_PREFIXES = ("3CDA6D", "BC516C", "D03BF4", "E4E66C")
 DOC_SECTIONS = {
     "Supported devices",
     "Data updates",
@@ -57,10 +58,10 @@ def test_manifest_depends_on_stream_for_camera_snapshots() -> None:
     assert "stream" in MANIFEST["dependencies"]
 
 
-def test_manifest_discovers_tiandy_cameras_and_known_devices() -> None:
+def test_manifest_discovers_camera_prefixes_and_known_devices() -> None:
     assert MANIFEST["dhcp"] == [
         {"registered_devices": True},
-        *({"macaddress": f"{prefix}*"} for prefix in TIANDY_PREFIXES),
+        *({"macaddress": f"{prefix}*"} for prefix in CAMERA_PREFIXES),
     ]
 
 
@@ -103,7 +104,7 @@ def test_readme_has_the_sections_the_quality_scale_asks_for() -> None:
 def test_docs_list_the_dhcp_prefixes(doc: str) -> None:
     text = (ROOT / doc).read_text()
 
-    for prefix in TIANDY_PREFIXES:
+    for prefix in CAMERA_PREFIXES:
         assert f"`{prefix[:2]}:{prefix[2:4]}:{prefix[4:]}`" in text
 
 
@@ -111,7 +112,7 @@ def test_lib_exports_come_from_the_vendored_library() -> None:
     modules = {
         name: getattr(lib, name).__module__
         for name in lib.__all__
-        if name != "create_camera"
+        if name not in {"create_camera", "create_relay"}
     }
 
     foreign = {k: v for k, v in modules.items() if not v.startswith(f"{VENDORED}.")}

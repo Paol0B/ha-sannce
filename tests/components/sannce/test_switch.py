@@ -76,6 +76,7 @@ async def switches(
     mock_camera: FakeSannceCamera,
     entity_registry: er.EntityRegistry,
 ) -> dict[str, str]:
+    mock_camera.detection = detection(*KINDS)
     await setup_integration(hass, identified_entry)
     ids = switch_ids(entity_registry, identified_entry)
     assert all(ids.values()), f"switches missing: {ids}"
@@ -297,7 +298,7 @@ async def test_no_switch_without_its_cap(
 
     ids = switch_ids(entity_registry, identified_entry)
     assert {k for k, entity_id in ids.items() if entity_id} == set(KINDS) - {kind}
-    assert len(hass.states.async_entity_ids(SWITCH_DOMAIN)) == len(KINDS) - 1
+    assert len(hass.states.async_entity_ids(SWITCH_DOMAIN)) == len(KINDS)
 
 
 async def test_no_switches_without_any_detection_cap(
@@ -306,7 +307,7 @@ async def test_no_switches_without_any_detection_cap(
     mock_camera: FakeSannceCamera,
     entity_registry: er.EntityRegistry,
 ) -> None:
-    mock_camera.caps = frozenset({"light_mode", "talk", "white_light"})
+    mock_camera.caps = frozenset({"light_mode", "speaker", "white_light"})
 
     await setup_integration(hass, identified_entry)
 
@@ -354,3 +355,104 @@ async def test_every_switch_has_a_translated_name(
         kind: translations[f"component.{DOMAIN}.entity.switch.{kind}_detection.name"]
         for kind in KINDS
     } == NAMES
+
+
+async def test_siren_on_event_is_a_config_switch_that_starts_off(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    await setup_integration(hass, identified_entry)
+    entity_id = "switch.i91fw_siren_on_event"
+
+    assert hass.states.get(entity_id).state == STATE_OFF
+    assert entity_registry.async_get(entity_id).entity_category is EntityCategory.CONFIG
+    mock_camera.set_siren_on_event.assert_not_awaited()
+
+
+async def test_siren_on_event_switch_reaches_the_camera(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    await setup_integration(hass, identified_entry)
+    entity_id = "switch.i91fw_siren_on_event"
+
+    await call(hass, SERVICE_TURN_ON, entity_id)
+
+    mock_camera.set_siren_on_event.assert_awaited_once_with(True)
+    assert hass.states.get(entity_id).state == STATE_ON
+
+    await call(hass, SERVICE_TURN_OFF, entity_id)
+
+    mock_camera.set_siren_on_event.assert_awaited_with(False)
+    assert hass.states.get(entity_id).state == STATE_OFF
+
+
+async def test_siren_on_event_follows_the_poll(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    await setup_integration(hass, identified_entry)
+    entity_id = "switch.i91fw_siren_on_event"
+
+    mock_camera.siren_on_event = True
+    await refresh(hass, identified_entry)
+
+    assert hass.states.get(entity_id).state == STATE_ON
+
+
+async def test_siren_on_event_command_failure_raises_an_ha_error(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    await setup_integration(hass, identified_entry)
+    entity_id = "switch.i91fw_siren_on_event"
+    mock_camera.set_siren_on_event.side_effect = lib.ProtocolError("bad reply")
+
+    with pytest.raises(HomeAssistantError, match=f"{entity_id}: bad reply"):
+        await call(hass, SERVICE_TURN_ON, entity_id)
+
+    assert hass.states.get(entity_id).state == STATE_OFF
+
+
+async def test_no_siren_on_event_switch_without_its_cap(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    mock_camera.caps = frozenset(cap for cap in ALL_CAPS if cap != "siren_on_event")
+
+    await setup_integration(hass, identified_entry)
+
+    assert (
+        entity_registry.async_get_entity_id(
+            SWITCH_DOMAIN, DOMAIN, f"{identified_entry.unique_id}_siren_on_event"
+        )
+        is None
+    )
+    assert len(hass.states.async_entity_ids(SWITCH_DOMAIN)) == len(KINDS)
+
+
+async def test_siren_on_event_switch_has_a_translated_name(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    await setup_integration(hass, identified_entry)
+    translations = await translation.async_get_translations(
+        hass, "en", "entity", [DOMAIN]
+    )
+
+    assert (
+        translations[f"component.{DOMAIN}.entity.switch.siren_on_event.name"]
+        == "Siren on event"
+    )
+    assert (
+        hass.states.get("switch.i91fw_siren_on_event").attributes[ATTR_FRIENDLY_NAME]
+        == "I91FW Siren on event"
+    )

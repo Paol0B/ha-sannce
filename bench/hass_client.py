@@ -1,8 +1,9 @@
 import argparse
 import asyncio
+import contextlib
 import itertools
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -214,6 +215,47 @@ class HassClient:
         reply = await self.command({"type": "camera/stream", "entity_id": entity_id})
         return reply["url"]
 
+    async def webrtc_answer(
+        self, entity_id: str, offer: str, timeout: float = 20
+    ) -> str:
+        async with self.webrtc_session(entity_id, offer, timeout) as answer:
+            return answer
+
+    @contextlib.asynccontextmanager
+    async def webrtc_session(
+        self, entity_id: str, offer: str, timeout: float = 20
+    ) -> AsyncIterator[str]:
+        async with self._ws_lock:
+            message_id = next(self._ids)
+            ws = await self._send(
+                {
+                    "id": message_id,
+                    "type": "camera/webrtc/offer",
+                    "entity_id": entity_id,
+                    "offer": offer,
+                }
+            )
+            try:
+                reply = await _result(ws, message_id)
+                if not reply["success"]:
+                    error = reply["error"]
+                    raise CommandError(error["code"], error["message"])
+                try:
+                    answer = await _answer(ws, message_id, entity_id, timeout)
+                except BaseException:
+                    await _unsubscribe(ws, next(self._ids), message_id)
+                    raise
+            except aiohttp.WSMessageTypeError:
+                await ws.close()
+                raise BenchError(
+                    f"the websocket closed before the WebRTC answer for {entity_id}"
+                ) from None
+        try:
+            yield answer
+        finally:
+            async with self._ws_lock:
+                await _unsubscribe(ws, next(self._ids), message_id)
+
     async def _try_sign_in(self) -> str | None:
         # 404s and refused connections mean Home Assistant is still starting
         try:
@@ -394,6 +436,39 @@ async def _result(
         reply = await ws.receive_json(timeout=TIMEOUT.total)
         if reply.get("id") == message_id and reply.get("type") == "result":
             return reply
+
+
+async def _answer(
+    ws: aiohttp.ClientWebSocketResponse, message_id: int, entity_id: str, timeout: float
+) -> str:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while (left := deadline - loop.time()) > 0:
+        try:
+            frame = await ws.receive_json(timeout=left)
+        except TimeoutError:
+            break
+        if frame.get("id") != message_id or frame.get("type") != "event":
+            continue
+        event = frame["event"]
+        if event["type"] == "answer":
+            return event["answer"]
+        if event["type"] == "error":
+            raise BenchError(
+                f"WebRTC offer for {entity_id} failed: "
+                f"{event['code']}: {event['message']}"
+            )
+    raise BenchError(f"no WebRTC answer for {entity_id} after {timeout:g} s")
+
+
+async def _unsubscribe(
+    ws: aiohttp.ClientWebSocketResponse, message_id: int, subscription: int
+) -> None:
+    if not ws.closed:
+        # ending the subscription closes the go2rtc session
+        await ws.send_json(
+            {"id": message_id, "type": "unsubscribe_events", "subscription": subscription}
+        )
 
 
 async def _check(response: aiohttp.ClientResponse) -> None:

@@ -29,9 +29,12 @@ async def test_diagnostics_redact_login_and_identity(
         firmware="1.0.0",
         mac=identified_entry.data[CONF_MAC],
     )
-    mock_camera.light_on = True
-    mock_camera.light_mode = "smart"
-    mock_camera.detection = lib.Detection(person=False, vehicle=True, motion=False)
+    mock_camera.floodlight_on = True
+    mock_camera.brightness = 60
+    mock_camera.light_mode = "color"
+    mock_camera.detection = lib.Detection(
+        person=False, vehicle=True, motion=False, sensitivity=40
+    )
     await setup_integration(hass, identified_entry)
 
     result = await get_diagnostics_for_config_entry(hass, hass_client, identified_entry)
@@ -56,9 +59,16 @@ async def test_diagnostics_redact_login_and_identity(
             "connected": True,
             "last_update_success": True,
             "settings": {
-                "light": True,
-                "light_mode": "smart",
-                "detection": {"person": False, "vehicle": True, "motion": False},
+                "floodlight": {"on": True, "brightness": 60},
+                "light_mode": "color",
+                "detection": {
+                    "person": False,
+                    "vehicle": True,
+                    "motion": False,
+                    "sensitivity": 40,
+                },
+                "volume": 80,
+                "siren_on_event": False,
             },
         },
     }
@@ -109,9 +119,11 @@ async def test_diagnostics_without_caps_or_info(
     }
     assert result["caps"] == []
     assert result["coordinator"]["settings"] == {
-        "light": None,
+        "floodlight": None,
         "light_mode": None,
         "detection": None,
+        "volume": None,
+        "siren_on_event": None,
     }
 
 

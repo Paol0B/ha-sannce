@@ -9,7 +9,7 @@
           "host": "Host",
           "username": "Username",
           "password": "Password",
-          "nvs_port": "Private protocol port",
+          "nvs_port": "Web port",
           "http_port": "HTTP port",
           "rtsp_port": "RTSP port"
         },
@@ -17,9 +17,9 @@
           "host": "IP address or host name of the camera.",
           "username": "Login name of the camera.",
           "password": "Password of the camera login.",
-          "nvs_port": "Used for events and the speaker.",
+          "nvs_port": "Used for events. It is the port of the camera's web player, 3002 by default.",
           "http_port": "Used for settings such as the light and detection.",
-          "rtsp_port": "Used for the video streams."
+          "rtsp_port": "Used for the video streams and the speaker."
         }
       },
       "pick_camera": {
@@ -39,7 +39,7 @@
           "host": "Host",
           "username": "Username",
           "password": "Password",
-          "nvs_port": "Private protocol port",
+          "nvs_port": "Web port",
           "http_port": "HTTP port",
           "rtsp_port": "RTSP port"
         },
@@ -47,9 +47,9 @@
           "host": "IP address or host name of the camera.",
           "username": "Login name of the camera.",
           "password": "New password of the camera login. Empty keeps the current one.",
-          "nvs_port": "Used for events and the speaker.",
+          "nvs_port": "Used for events. It is the port of the camera's web player, 3002 by default.",
           "http_port": "Used for settings such as the light and detection.",
-          "rtsp_port": "Used for the video streams."
+          "rtsp_port": "Used for the video streams and the speaker."
         }
       },
       "dhcp_confirm": {
@@ -107,6 +107,9 @@
     "play_failed": {
       "message": "Cannot play media on {entity_id}: {error}"
     },
+    "relay_failed": {
+      "message": "Cannot open the video relay for {host}: {error}"
+    },
     "settings_read_failed": {
       "message": "Cannot read settings from {host}: {error}"
     },
@@ -122,6 +125,9 @@
       "line": {
         "name": "Line crossing"
       },
+      "person": {
+        "name": "Person"
+      },
       "vehicle": {
         "name": "Vehicle"
       },
@@ -131,10 +137,10 @@
     },
     "camera": {
       "main": {
-        "name": "Main stream"
+        "name": "Clear"
       },
       "sub": {
-        "name": "Sub stream"
+        "name": "Fluent"
       }
     },
     "light": {
@@ -147,9 +153,17 @@
         "name": "Speaker"
       }
     },
+    "number": {
+      "motion_sensitivity": {
+        "name": "Motion sensitivity"
+      },
+      "volume": {
+        "name": "Volume"
+      }
+    },
     "select": {
       "light_mode": {
-        "name": "Light mode",
+        "name": "Floodlight mode",
         "state": {
           "color": "Color",
           "infrared": "Infrared",
@@ -168,6 +182,9 @@
       },
       "person_detection": {
         "name": "Person detection"
+      },
+      "siren_on_event": {
+        "name": "Siren on event"
       },
       "vehicle_detection": {
         "name": "Vehicle detection"

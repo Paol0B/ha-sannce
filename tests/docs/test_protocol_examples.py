@@ -10,11 +10,13 @@ PROTOCOL = DOCS / "protocol.md"
 
 SECTIONS = {"framing", "login", "login_encrypted", "heartbeat", "events", "talk", "discovery", "http"}
 DIRECTIONS = {"client_to_camera", "camera_to_client"}
-TRANSPORTS = {"nvs_tcp", "nvs_udp", "http"}
+TRANSPORTS = {"nvs_tcp", "nvs_udp", "nvs_ws", "http"}
 STATUSES = {"static", "inferred", "verified"}
 ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
 HEX_PATTERN = re.compile(r"^([0-9a-f]{2})+$")
-EVIDENCE_PATTERN = re.compile(r"^(lib[A-Za-z0-9_]+\.so:.+@0x[0-9a-f]+|java:[^:]+:\d+)$")
+EVIDENCE_PATTERN = re.compile(
+    r"^(lib[A-Za-z0-9_]+\.so:.+@0x[0-9a-f]+|java:[^:]+:\d+|web:/\S+)$"
+)
 
 REQUIRED_IDS: set[str] = {
     "framing_parameter_get_request",
@@ -78,6 +80,7 @@ def test_example_shape(example):
     assert example["evidence"], "evidence must not be empty"
     for item in example["evidence"]:
         assert EVIDENCE_PATTERN.match(item), item
+    assert bool(example.get("source")) == (example["status"] == "verified")
 
 
 @pytest.mark.parametrize("example_id", example_ids())
@@ -128,5 +131,34 @@ def test_open_questions_have_hardware_checks():
 
 def test_status_summary_total_row_matches_data():
     statuses = [ex["status"] for ex in load_examples()]
-    row = f"| total | {statuses.count('static')} | {statuses.count('inferred')} | {len(open_questions())} |"
+    counts = " | ".join(
+        str(n)
+        for n in (
+            statuses.count("static"),
+            statuses.count("inferred"),
+            statuses.count("verified"),
+            len(open_questions()),
+        )
+    )
+    row = f"| total | {counts} |"
     assert row in PROTOCOL.read_text(encoding="utf-8")
+
+
+def test_status_summary_rows_match_data():
+    text = PROTOCOL.read_text(encoding="utf-8")
+    rows = re.findall(r"^\| (\w+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \|$", text, re.MULTILINE)
+    areas = {row[0]: tuple(int(n) for n in row[1:]) for row in rows}
+    assert set(areas) == SECTIONS | {"transport", "total"}
+    examples = load_examples()
+    questions = open_questions()
+    for area, counts in areas.items():
+        if area == "total":
+            continue
+        statuses = [ex["status"] for ex in examples if ex["section"] == area]
+        expected = (
+            statuses.count("static"),
+            statuses.count("inferred"),
+            statuses.count("verified"),
+            len([q for q in questions if q.startswith(f"{area}: ")]),
+        )
+        assert counts == expected, area

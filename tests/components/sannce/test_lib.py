@@ -7,18 +7,26 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from custom_components.sannce import lib
+from custom_components.sannce import lib, sannce_aio
 from custom_components.sannce.const import (
     CONF_HTTP_PORT,
     CONF_NVS_PORT,
     CONF_RTSP_PORT,
     DOMAIN,
 )
+from custom_components.sannce.lib import create_relay
 
 from . import HOST, PASSWORD, USERNAME
 from .conftest import FakeSannceCamera
 
 LOGIN = {CONF_HOST: HOST, CONF_USERNAME: USERNAME, CONF_PASSWORD: PASSWORD}
+
+
+def test_lib_reexports_the_library_api() -> None:
+    assert set(sannce_aio.__all__) <= set(lib.__all__)
+    assert all(
+        getattr(lib, name) is getattr(sannce_aio, name) for name in sannce_aio.__all__
+    )
 
 
 async def test_create_camera_uses_default_ports(
@@ -31,7 +39,7 @@ async def test_create_camera_uses_default_ports(
         HOST,
         USERNAME,
         PASSWORD,
-        nvs_port=3000,
+        nvs_port=3002,
         http_port=80,
         rtsp_port=554,
         session=async_get_clientsession(hass),
@@ -51,6 +59,22 @@ async def test_create_camera_uses_given_ports(
         8080,
         8554,
     )
+
+
+# the autouse relay fixture patches lib.create_relay; this name holds the real one
+def test_create_relay_listens_on_localhost_for_the_rtsp_port() -> None:
+    with patch("custom_components.sannce.lib.RtspRelay") as relay_class:
+        relay = create_relay(LOGIN)
+
+    assert relay is relay_class.return_value
+    relay_class.assert_called_once_with(HOST, 554, listen_host="127.0.0.1")
+
+
+def test_create_relay_uses_the_given_rtsp_port() -> None:
+    with patch("custom_components.sannce.lib.RtspRelay") as relay_class:
+        create_relay(LOGIN | {CONF_RTSP_PORT: 8554})
+
+    relay_class.assert_called_once_with(HOST, 8554, listen_host="127.0.0.1")
 
 
 @pytest.mark.usefixtures("mock_find_camera")

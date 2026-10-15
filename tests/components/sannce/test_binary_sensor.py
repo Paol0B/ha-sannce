@@ -19,7 +19,7 @@ from custom_components.sannce.const import DOMAIN
 from . import setup_integration
 from .conftest import ALL_CAPS, FakeSannceCamera
 
-KINDS = ("motion", "vehicle", "intrusion", "line", "tamper", "video_loss")
+KINDS = ("motion", "person", "vehicle", "intrusion", "line", "tamper", "video_loss")
 UNGATED = ("intrusion", "line", "tamper", "video_loss")
 
 
@@ -46,6 +46,10 @@ def states(hass: HomeAssistant, sensors: dict[str, str]) -> dict[str, str]:
     }
 
 
+def on_only(*kinds: str) -> dict[str, str]:
+    return {kind: STATE_ON if kind in kinds else STATE_OFF for kind in KINDS}
+
+
 async def push(
     hass: HomeAssistant,
     camera: FakeSannceCamera,
@@ -54,6 +58,11 @@ async def push(
     channel: int = 0,
 ) -> None:
     camera.emit(lib.Event(kind, active, channel))
+    await hass.async_block_till_done()
+
+
+async def refresh(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
 
 
@@ -92,20 +101,63 @@ async def test_stop_event_turns_the_sensor_off(
     assert hass.states.get(sensors["motion"]).state == STATE_OFF
 
 
-@pytest.mark.parametrize("kind", KINDS)
-async def test_each_kind_drives_only_its_own_sensor(
+@pytest.mark.parametrize(
+    ("kind", "turned_on"),
+    [
+        ("motion", ("motion", "person")),
+        ("vehicle", ("vehicle", "motion")),
+        ("intrusion", ("intrusion",)),
+        ("line", ("line",)),
+        ("tamper", ("tamper",)),
+        ("video_loss", ("video_loss",)),
+    ],
+)
+async def test_each_kind_drives_its_own_sensors(
     hass: HomeAssistant,
     sensors: dict[str, str],
     mock_camera: FakeSannceCamera,
     kind: str,
+    turned_on: tuple[str, ...],
 ) -> None:
     await push(hass, mock_camera, kind, True)
 
-    assert states(hass, sensors) == {
-        other: STATE_ON if other == kind else STATE_OFF for other in KINDS
-    }
+    assert states(hass, sensors) == on_only(*turned_on)
 
     await push(hass, mock_camera, kind, False)
+
+    assert states(hass, sensors) == dict.fromkeys(KINDS, STATE_OFF)
+
+
+async def test_motiondetect_turns_on_person_and_motion(
+    hass: HomeAssistant, sensors: dict[str, str], mock_camera: FakeSannceCamera
+) -> None:
+    await push(hass, mock_camera, "motion", True)
+
+    assert hass.states.get("binary_sensor.i91fw_person").state == STATE_ON
+    assert hass.states.get("binary_sensor.i91fw_motion").state == STATE_ON
+    assert hass.states.get("binary_sensor.i91fw_vehicle").state == STATE_OFF
+
+
+async def test_a_vehicle_turns_on_vehicle_and_motion_only(
+    hass: HomeAssistant, sensors: dict[str, str], mock_camera: FakeSannceCamera
+) -> None:
+    await push(hass, mock_camera, "vehicle", True)
+
+    assert hass.states.get("binary_sensor.i91fw_vehicle").state == STATE_ON
+    assert hass.states.get("binary_sensor.i91fw_motion").state == STATE_ON
+    assert hass.states.get("binary_sensor.i91fw_person").state == STATE_OFF
+
+
+async def test_motion_stays_on_until_every_kind_stops(
+    hass: HomeAssistant, sensors: dict[str, str], mock_camera: FakeSannceCamera
+) -> None:
+    await push(hass, mock_camera, "motion", True)
+    await push(hass, mock_camera, "vehicle", True)
+    await push(hass, mock_camera, "motion", False)
+
+    assert states(hass, sensors) == on_only("motion", "vehicle")
+
+    await push(hass, mock_camera, "vehicle", False)
 
     assert states(hass, sensors) == dict.fromkeys(KINDS, STATE_OFF)
 
@@ -134,18 +186,56 @@ async def test_sensor_stays_on_while_any_channel_is_active(
     assert hass.states.get(sensors["motion"]).state == STATE_OFF
 
 
-async def test_there_is_no_person_sensor(
+async def test_person_is_unavailable_while_all_motion_is_on(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    entity_registry_enabled_by_default: None,
+) -> None:
+    mock_camera.detection = lib.Detection(
+        person=True, vehicle=True, motion=True, sensitivity=76
+    )
+
+    await setup_integration(hass, identified_entry)
+
+    assert hass.states.get("binary_sensor.i91fw_person").state == STATE_UNAVAILABLE
+    assert hass.states.get("binary_sensor.i91fw_motion").state == STATE_OFF
+
+
+async def test_person_returns_when_all_motion_is_switched_off(
     hass: HomeAssistant,
     identified_entry: MockConfigEntry,
     sensors: dict[str, str],
-    entity_registry: er.EntityRegistry,
     mock_camera: FakeSannceCamera,
 ) -> None:
-    await push(hass, mock_camera, "person", True)
+    mock_camera.detection = lib.Detection(
+        person=True, vehicle=True, motion=True, sensitivity=76
+    )
+    await refresh(hass, identified_entry)
 
-    assert registered_kinds(entity_registry, identified_entry) == set(KINDS)
-    assert states(hass, sensors) == dict.fromkeys(KINDS, STATE_OFF)
-    assert len(hass.states.async_entity_ids("binary_sensor")) == len(KINDS)
+    assert hass.states.get("binary_sensor.i91fw_person").state == STATE_UNAVAILABLE
+
+    mock_camera.detection = lib.Detection(
+        person=True, vehicle=True, motion=False, sensitivity=76
+    )
+    await refresh(hass, identified_entry)
+
+    assert hass.states.get("binary_sensor.i91fw_person").state == STATE_OFF
+
+
+async def test_all_motion_leaves_the_other_sensors_available(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    sensors: dict[str, str],
+    mock_camera: FakeSannceCamera,
+) -> None:
+    mock_camera.detection = lib.Detection(
+        person=True, vehicle=True, motion=True, sensitivity=76
+    )
+    await refresh(hass, identified_entry)
+    await push(hass, mock_camera, "motion", True)
+
+    assert states(hass, sensors) == on_only("motion") | {"person": STATE_UNAVAILABLE}
 
 
 @pytest.mark.parametrize(
@@ -153,14 +243,14 @@ async def test_there_is_no_person_sensor(
     [
         (ALL_CAPS, KINDS),
         (("motion",), ("motion", *UNGATED)),
-        (("person",), ("motion", *UNGATED)),
-        (("vehicle",), ("vehicle", *UNGATED)),
-        (("white_light", "talk"), UNGATED),
+        (("person",), ("motion", "person", *UNGATED)),
+        (("vehicle",), ("motion", "vehicle", *UNGATED)),
+        (("white_light", "speaker"), UNGATED),
         ((), UNGATED),
     ],
     ids=["all", "motion", "person", "vehicle", "no_detection", "none"],
 )
-async def test_motion_and_vehicle_sensors_follow_the_camera_caps(
+async def test_detection_sensors_follow_the_camera_caps(
     hass: HomeAssistant,
     identified_entry: MockConfigEntry,
     mock_camera: FakeSannceCamera,
@@ -179,6 +269,7 @@ async def test_motion_and_vehicle_sensors_follow_the_camera_caps(
     ("kind", "device_class", "name"),
     [
         ("motion", BinarySensorDeviceClass.MOTION, "I91FW Motion"),
+        ("person", BinarySensorDeviceClass.MOTION, "I91FW Person"),
         ("vehicle", BinarySensorDeviceClass.MOTION, "I91FW Vehicle"),
         ("intrusion", BinarySensorDeviceClass.MOTION, "I91FW Intrusion"),
         ("line", BinarySensorDeviceClass.MOTION, "I91FW Line crossing"),
@@ -259,15 +350,13 @@ async def test_failed_settings_poll_keeps_sensors_available(
     mock_camera: FakeSannceCamera,
 ) -> None:
     await push(hass, mock_camera, "motion", True)
-    mock_camera.get_light.side_effect = lib.ConnectError("unreachable")
+    mock_camera.get_floodlight.side_effect = lib.ConnectError("unreachable")
 
     await identified_entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
 
     assert identified_entry.runtime_data.last_update_success is False
-    assert states(hass, sensors) == {
-        kind: STATE_ON if kind == "motion" else STATE_OFF for kind in KINDS
-    }
+    assert states(hass, sensors) == on_only("motion", "person")
 
 
 async def test_settings_update_keeps_the_event_state(
@@ -277,12 +366,12 @@ async def test_settings_update_keeps_the_event_state(
     mock_camera: FakeSannceCamera,
 ) -> None:
     await push(hass, mock_camera, "motion", True)
-    mock_camera.light_on = True
+    mock_camera.volume = 30
 
     await identified_entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
 
-    assert identified_entry.runtime_data.data.light is True
+    assert identified_entry.runtime_data.data.volume == 30
     assert hass.states.get(sensors["motion"]).state == STATE_ON
 
 
@@ -318,4 +407,4 @@ async def test_rule_sensors_start_disabled(
     }
     shown = {kind for kind, entity_id in ids.items() if hass.states.get(entity_id)}
     assert disabled == set(UNGATED)
-    assert shown == {"motion", "vehicle"}
+    assert shown == {"motion", "person", "vehicle"}

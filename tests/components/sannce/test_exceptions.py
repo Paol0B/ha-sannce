@@ -66,8 +66,8 @@ def fields(message: str) -> set[str]:
     return {name for _, name, _, _ in string.Formatter().parse(message) if name}
 
 
-def test_the_integration_raises_nine_errors() -> None:
-    assert len(RAISED) == 9
+def test_the_integration_raises_ten_errors() -> None:
+    assert len(RAISED) == 10
 
 
 @pytest.mark.parametrize(("where", "call"), RAISED, ids=[where for where, _ in RAISED])
@@ -133,7 +133,7 @@ async def test_a_failed_poll_is_translated(
     mock_camera: FakeSannceCamera,
 ) -> None:
     await setup_integration(hass, mock_config_entry)
-    mock_camera.get_light.side_effect = lib.ConnectError("unreachable")
+    mock_camera.get_floodlight.side_effect = lib.ConnectError("unreachable")
 
     await mock_config_entry.runtime_data.async_refresh()
 
@@ -153,7 +153,7 @@ async def test_a_failed_command_is_translated(
     light = entity_registry.async_get_entity_id(
         LIGHT_DOMAIN, DOMAIN, f"{identified_entry.unique_id}_floodlight"
     )
-    mock_camera.set_light.side_effect = lib.ConnectError("unreachable")
+    mock_camera.set_floodlight.side_effect = lib.ConnectError("unreachable")
 
     with pytest.raises(HomeAssistantError) as raised:
         await hass.services.async_call(

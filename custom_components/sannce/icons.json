@@ -13,6 +13,14 @@
         "default": "mdi:light-flood-down"
       }
     },
+    "number": {
+      "motion_sensitivity": {
+        "default": "mdi:motion-sensor"
+      },
+      "volume": {
+        "default": "mdi:volume-high"
+      }
+    },
     "select": {
       "light_mode": {
         "default": "mdi:theme-light-dark",
@@ -39,6 +47,12 @@
         "default": "mdi:account-search",
         "state": {
           "off": "mdi:account-off"
+        }
+      },
+      "siren_on_event": {
+        "default": "mdi:alarm-bell",
+        "state": {
+          "off": "mdi:alarm-off"
         }
       },
       "vehicle_detection": {

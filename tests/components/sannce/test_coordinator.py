@@ -39,21 +39,77 @@ async def test_first_refresh_exposes_camera_settings(
     mock_config_entry: MockConfigEntry,
     mock_camera: FakeSannceCamera,
 ) -> None:
-    mock_camera.light_on = True
-    mock_camera.light_mode = "smart"
-    mock_camera.detection = lib.Detection(person=False, vehicle=True, motion=False)
+    mock_camera.floodlight_on = True
+    mock_camera.brightness = 60
+    mock_camera.light_mode = "color"
+    mock_camera.detection = lib.Detection(
+        person=False, vehicle=True, motion=False, sensitivity=40
+    )
+    mock_camera.volume = 35
+    mock_camera.siren_on_event = True
 
     await setup_integration(hass, mock_config_entry)
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert mock_config_entry.runtime_data.data == SannceData(
-        light=True,
-        light_mode="smart",
-        detection=lib.Detection(person=False, vehicle=True, motion=False),
+        floodlight=lib.Floodlight(on=True, brightness=60),
+        light_mode="color",
+        detection=lib.Detection(
+            person=False, vehicle=True, motion=False, sensitivity=40
+        ),
+        volume=35,
+        siren_on_event=True,
     )
-    mock_camera.get_light.assert_awaited_once()
+    mock_camera.get_floodlight.assert_awaited_once()
     mock_camera.get_light_mode.assert_awaited_once()
     mock_camera.get_detection.assert_awaited_once()
+    mock_camera.get_volume.assert_awaited_once()
+    mock_camera.get_siren_on_event.assert_awaited_once()
+
+
+async def test_base_mode_follows_the_camera_mode(
+    coordinator: SannceCoordinator, mock_camera: FakeSannceCamera
+) -> None:
+    assert coordinator.base_mode == "infrared"
+
+    mock_camera.light_mode = "smart"
+    await coordinator.async_refresh()
+
+    assert coordinator.base_mode == "smart"
+
+
+@pytest.mark.parametrize(
+    ("floodlight_on", "light_mode"),
+    [(True, "color"), (False, "custom")],
+    ids=["forced_on", "custom"],
+)
+async def test_base_mode_ignores_a_mode_the_user_did_not_pick(
+    coordinator: SannceCoordinator,
+    mock_camera: FakeSannceCamera,
+    floodlight_on: bool,
+    light_mode: str,
+) -> None:
+    mock_camera.floodlight_on = floodlight_on
+    mock_camera.light_mode = light_mode
+
+    await coordinator.async_refresh()
+
+    assert coordinator.base_mode == "infrared"
+
+
+async def test_base_mode_stays_unset_while_forced_on(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    mock_camera.floodlight_on = True
+    mock_camera.light_mode = "color"
+    coordinator = SannceCoordinator(hass, mock_config_entry, mock_camera)
+
+    await coordinator.async_refresh()
+
+    assert coordinator.last_update_success is True
+    assert coordinator.base_mode is None
 
 
 async def test_polls_every_minute(
@@ -64,18 +120,27 @@ async def test_polls_every_minute(
 ) -> None:
     assert coordinator.update_interval == timedelta(seconds=60)
     stop_listening = coordinator.async_add_listener(lambda: None)
-    mock_camera.light_on = True
+    mock_camera.floodlight_on = True
 
     freezer.tick(UPDATE_INTERVAL)
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert mock_camera.get_light.await_count == 2
-    assert coordinator.data.light is True
+    assert mock_camera.get_floodlight.await_count == 2
+    assert coordinator.data.floodlight == lib.Floodlight(on=True, brightness=100)
     stop_listening()
 
 
-@pytest.mark.parametrize("getter", ["get_light", "get_light_mode", "get_detection"])
+@pytest.mark.parametrize(
+    "getter",
+    [
+        "get_floodlight",
+        "get_light_mode",
+        "get_detection",
+        "get_volume",
+        "get_siren_on_event",
+    ],
+)
 @pytest.mark.parametrize(
     "error",
     [lib.ConnectError("unreachable"), lib.ProtocolError("bad reply")],
@@ -111,11 +176,11 @@ async def test_failed_poll_notifies_listeners(
     stop_listening = coordinator.async_add_listener(
         lambda: seen.append(coordinator.last_update_success)
     )
-    working = mock_camera.get_light.side_effect
+    working = mock_camera.get_floodlight.side_effect
 
-    mock_camera.get_light.side_effect = lib.ConnectError("unreachable")
+    mock_camera.get_floodlight.side_effect = lib.ConnectError("unreachable")
     await coordinator.async_refresh()
-    mock_camera.get_light.side_effect = working
+    mock_camera.get_floodlight.side_effect = working
     await coordinator.async_refresh()
 
     assert seen == [False, True]
@@ -133,10 +198,10 @@ async def test_unchanged_poll_does_not_notify_listeners(
     await coordinator.async_refresh()
     assert calls == []
 
-    mock_camera.light_on = True
+    mock_camera.volume = 30
     await coordinator.async_refresh()
 
-    assert [data.light for data in calls] == [True]
+    assert [data.volume for data in calls] == [30]
     stop_listening()
 
 
@@ -146,7 +211,7 @@ async def test_poll_auth_error_starts_reauth(
     coordinator: SannceCoordinator,
     mock_camera: FakeSannceCamera,
 ) -> None:
-    mock_camera.get_light.side_effect = lib.AuthError("credentials rejected")
+    mock_camera.get_floodlight.side_effect = lib.AuthError("credentials rejected")
 
     await coordinator.async_refresh()
     await hass.async_block_till_done()
@@ -173,22 +238,36 @@ async def test_reconnect_give_up_starts_reauth(
 @pytest.mark.parametrize(
     ("caps", "expected"),
     [
-        (ALL_CAPS, (1, 1, 1)),
-        (("white_light", "talk"), (1, 0, 0)),
-        (("light_mode",), (0, 1, 0)),
-        (("person",), (0, 0, 1)),
-        (("vehicle",), (0, 0, 1)),
-        (("motion",), (0, 0, 1)),
-        ((), (0, 0, 0)),
+        (ALL_CAPS, (1, 1, 1, 1, 1)),
+        (("white_light", "light_mode"), (1, 1, 0, 0, 0)),
+        (("white_light", "speaker"), (0, 0, 0, 0, 0)),
+        (("light_mode",), (0, 1, 0, 0, 0)),
+        (("person",), (0, 0, 1, 0, 0)),
+        (("vehicle",), (0, 0, 1, 0, 0)),
+        (("motion",), (0, 0, 1, 0, 0)),
+        (("volume",), (0, 0, 0, 1, 0)),
+        (("siren_on_event",), (0, 0, 0, 0, 1)),
+        ((), (0, 0, 0, 0, 0)),
     ],
-    ids=["all", "light", "mode", "person", "vehicle", "motion", "none"],
+    ids=[
+        "all",
+        "floodlight",
+        "light_only",
+        "mode",
+        "person",
+        "vehicle",
+        "motion",
+        "volume",
+        "siren_on_event",
+        "none",
+    ],
 )
 async def test_poll_reads_only_supported_settings(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
     mock_camera: FakeSannceCamera,
     caps: tuple[str, ...],
-    expected: tuple[int, int, int],
+    expected: tuple[int, ...],
 ) -> None:
     mock_camera.caps = frozenset(caps)
 
@@ -197,14 +276,18 @@ async def test_poll_reads_only_supported_settings(
     assert mock_config_entry.state is ConfigEntryState.LOADED
     data = mock_config_entry.runtime_data.data
     polled = (
-        mock_camera.get_light.await_count,
+        mock_camera.get_floodlight.await_count,
         mock_camera.get_light_mode.await_count,
         mock_camera.get_detection.await_count,
+        mock_camera.get_volume.await_count,
+        mock_camera.get_siren_on_event.await_count,
     )
     exposed = (
-        int(data.light is not None),
+        int(data.floodlight is not None),
         int(data.light_mode is not None),
         int(data.detection is not None),
+        int(data.volume is not None),
+        int(data.siren_on_event is not None),
     )
     assert polled == exposed == expected
 
@@ -225,7 +308,7 @@ async def test_setup_fails_when_first_poll_fails(
     error: lib.SannceError,
     state: ConfigEntryState,
 ) -> None:
-    mock_camera.get_light.side_effect = error
+    mock_camera.get_floodlight.side_effect = error
 
     await setup_integration(hass, mock_config_entry)
 
@@ -308,16 +391,16 @@ async def test_reconnect_refreshes_the_settings(
     mock_camera: FakeSannceCamera,
 ) -> None:
     mock_camera.set_available(False)
-    mock_camera.light_on = True
+    mock_camera.floodlight_on = True
     await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert mock_camera.get_light.await_count == 1
+    assert mock_camera.get_floodlight.await_count == 1
 
     mock_camera.set_available(True)
     await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert mock_camera.get_light.await_count == 2
-    assert coordinator.data.light is True
+    assert mock_camera.get_floodlight.await_count == 2
+    assert coordinator.data.floodlight == lib.Floodlight(on=True, brightness=100)
 
 
 async def test_unload_drops_the_event_subscription(
@@ -367,7 +450,7 @@ async def test_a_drop_and_a_return_log_once_each(
     ]
     # the debouncer would hide a second request from the poll count
     refresh.assert_awaited_once()
-    assert mock_camera.get_light.await_count == 2
+    assert mock_camera.get_floodlight.await_count == 2
 
 
 async def test_setup_and_unload_log_no_availability_change(

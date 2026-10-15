@@ -1,0 +1,8 @@
+services:
+  homeassistant:
+    network_mode: host
+    ports: !reset []
+    networks: !reset {}
+    environment:
+      BENCH_INTERNAL_URL: http://127.0.0.1:8123
+      BENCH_SERVER_HOST: 127.0.0.1
