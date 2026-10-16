@@ -14,7 +14,7 @@ The acceptance run with Home Assistant on that camera is done (2026-10-15):
 - On the video, the floodlight goes on, to 30 % and off.
 - Volume drives the speaker. Motion sensitivity and Siren on event reach the camera.
 - The generated `alarm` tone is heard and stops at once on turn_off. TTS through the speaker is heard.
-- Two-way talk from the wall card worked twice in a row, with the live view up. Home Assistant ran on the host network. That test used an earlier relay, which answered only the repeated backchannel setup. The current relay is not yet checked on the camera. On a Docker bridge network WebRTC does not connect, see Live push-to-talk.
+- Two-way talk from the wall card worked twice in a row, with the live view up. Home Assistant ran on the host network. That test used an earlier relay, which answered only the repeated backchannel setup. The current relay passed a scripted check on the camera, without the wall card. On a Docker bridge network WebRTC does not connect, see Live push-to-talk.
 
 Not verified on the camera:
 
