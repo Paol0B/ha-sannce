@@ -35,8 +35,15 @@ def test_every_icon_is_a_material_design_icon() -> None:
         for icon in [entity["default"], *entity.get("state", {}).values()]
     ]
 
-    assert len(icons) == 18
+    assert len(icons) == 20
     assert all(icon.startswith("mdi:") for icon in icons)
+
+
+def test_intercom_shows_a_muted_microphone_until_a_talk_starts() -> None:
+    assert ICONS["binary_sensor"]["intercom"] == {
+        "default": "mdi:microphone-off",
+        "state": {"on": "mdi:microphone"},
+    }
 
 
 def test_light_mode_has_an_icon_per_option() -> None:

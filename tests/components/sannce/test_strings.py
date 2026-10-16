@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 import custom_components.sannce as integration
-from custom_components.sannce.binary_sensor import EVENT_SENSORS
+from custom_components.sannce.binary_sensor import EVENT_SENSORS, INTERCOM
 from custom_components.sannce.camera import CAMERAS
 from custom_components.sannce.const import PLATFORMS
 from custom_components.sannce.light import FLOODLIGHT
@@ -16,7 +16,7 @@ from custom_components.sannce.switch import SWITCHES
 
 STRINGS = json.loads((Path(integration.__file__).parent / "strings.json").read_text())
 DESCRIPTIONS = {
-    "binary_sensor": EVENT_SENSORS,
+    "binary_sensor": (*EVENT_SENSORS, INTERCOM),
     "camera": CAMERAS,
     "light": (FLOODLIGHT,),
     "media_player": (SPEAKER,),

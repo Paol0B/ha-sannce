@@ -419,6 +419,38 @@ async def test_unload_drops_the_event_subscription(
     mock_camera.close.assert_awaited_once()
 
 
+async def test_a_speaker_owner_change_updates_the_listeners(
+    coordinator: SannceCoordinator, mock_camera: FakeSannceCamera
+) -> None:
+    owners: list[str | None] = []
+    stop_listening = coordinator.async_add_listener(
+        lambda: owners.append(mock_camera.speaker.owner)
+    )
+
+    mock_camera.speaker.set_owner("talk")
+    mock_camera.speaker.set_owner(None)
+
+    assert owners == ["talk", None]
+    stop_listening()
+
+
+async def test_unload_drops_the_speaker_subscription(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    coordinator: SannceCoordinator,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    owners: list[str | None] = []
+    coordinator.async_add_listener(lambda: owners.append(mock_camera.speaker.owner))
+
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    owners.clear()
+    mock_camera.speaker.set_owner("talk")
+
+    assert owners == []
+    assert mock_camera.speaker.subscribers == []
+
+
 def availability_log(caplog: pytest.LogCaptureFixture) -> list[tuple[int, str]]:
     return [
         (record.levelno, record.getMessage())

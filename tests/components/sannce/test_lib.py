@@ -63,18 +63,31 @@ async def test_create_camera_uses_given_ports(
 
 # the autouse relay fixture patches lib.create_relay; this name holds the real one
 def test_create_relay_listens_on_localhost_for_the_rtsp_port() -> None:
+    speaker = FakeSannceCamera().speaker
+
     with patch("custom_components.sannce.lib.RtspRelay") as relay_class:
-        relay = create_relay(LOGIN)
+        relay = create_relay(LOGIN, speaker)
 
     assert relay is relay_class.return_value
-    relay_class.assert_called_once_with(HOST, 554, listen_host="127.0.0.1")
+    relay_class.assert_called_once_with(
+        HOST, 554, listen_host="127.0.0.1", speaker=speaker
+    )
 
 
 def test_create_relay_uses_the_given_rtsp_port() -> None:
     with patch("custom_components.sannce.lib.RtspRelay") as relay_class:
-        create_relay(LOGIN | {CONF_RTSP_PORT: 8554})
+        create_relay(LOGIN | {CONF_RTSP_PORT: 8554}, FakeSannceCamera().speaker)
 
-    relay_class.assert_called_once_with(HOST, 8554, listen_host="127.0.0.1")
+    assert relay_class.call_args.args == (HOST, 8554)
+
+
+def test_create_relay_passes_the_speaker() -> None:
+    speaker = FakeSannceCamera().speaker
+
+    with patch("custom_components.sannce.lib.RtspRelay") as relay_class:
+        create_relay(LOGIN, speaker)
+
+    assert relay_class.call_args.kwargs["speaker"] is speaker
 
 
 @pytest.mark.usefixtures("mock_find_camera")

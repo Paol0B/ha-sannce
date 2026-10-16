@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.const import (
@@ -21,6 +23,7 @@ from .conftest import ALL_CAPS, FakeSannceCamera
 
 KINDS = ("motion", "person", "vehicle", "intrusion", "line", "tamper", "video_loss")
 UNGATED = ("intrusion", "line", "tamper", "video_loss")
+INTERCOM = "binary_sensor.i91fw_intercom"
 
 
 def sensor_id(registry: er.EntityRegistry, entry: MockConfigEntry, key: str) -> str:
@@ -241,14 +244,15 @@ async def test_all_motion_leaves_the_other_sensors_available(
 @pytest.mark.parametrize(
     ("caps", "expected"),
     [
-        (ALL_CAPS, KINDS),
+        (ALL_CAPS, (*KINDS, "intercom")),
         (("motion",), ("motion", *UNGATED)),
         (("person",), ("motion", "person", *UNGATED)),
         (("vehicle",), ("motion", "vehicle", *UNGATED)),
-        (("white_light", "speaker"), UNGATED),
+        (("white_light", "speaker"), (*UNGATED, "intercom")),
+        (("white_light",), UNGATED),
         ((), UNGATED),
     ],
-    ids=["all", "motion", "person", "vehicle", "no_detection", "none"],
+    ids=["all", "motion", "person", "vehicle", "speaker_only", "no_speaker", "none"],
 )
 async def test_detection_sensors_follow_the_camera_caps(
     hass: HomeAssistant,
@@ -408,3 +412,120 @@ async def test_rule_sensors_start_disabled(
     shown = {kind for kind, entity_id in ids.items() if hass.states.get(entity_id)}
     assert disabled == set(UNGATED)
     assert shown == {"motion", "person", "vehicle"}
+
+
+@pytest.fixture
+async def intercom(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+) -> str:
+    await setup_integration(hass, identified_entry)
+    return sensor_id(entity_registry, identified_entry, "intercom")
+
+
+async def test_intercom_is_off_until_a_talk_owns_the_speaker(
+    hass: HomeAssistant, intercom: str, mock_camera: FakeSannceCamera
+) -> None:
+    assert intercom == INTERCOM
+    assert hass.states.get(INTERCOM).state == STATE_OFF
+
+    mock_camera.speaker.set_owner("talk")
+    await hass.async_block_till_done()
+
+    assert hass.states.get(INTERCOM).state == STATE_ON
+
+    mock_camera.speaker.set_owner(None)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(INTERCOM).state == STATE_OFF
+
+
+async def test_a_play_does_not_turn_the_intercom_on(
+    hass: HomeAssistant, intercom: str, mock_camera: FakeSannceCamera
+) -> None:
+    mock_camera.speaker.set_owner("play")
+    await hass.async_block_till_done()
+
+    assert hass.states.get(INTERCOM).state == STATE_OFF
+
+
+async def test_intercom_follows_camera_availability(
+    hass: HomeAssistant, intercom: str, mock_camera: FakeSannceCamera
+) -> None:
+    mock_camera.speaker.set_owner("talk")
+    mock_camera.set_available(False)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(INTERCOM).state == STATE_UNAVAILABLE
+
+    mock_camera.set_available(True)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(INTERCOM).state == STATE_ON
+
+
+async def test_intercom_name_and_registry_entry(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    intercom: str,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    entry = entity_registry.async_get(INTERCOM)
+
+    assert hass.states.get(INTERCOM).attributes[ATTR_FRIENDLY_NAME] == "I91FW Intercom"
+    assert ATTR_DEVICE_CLASS not in hass.states.get(INTERCOM).attributes
+    assert entry.unique_id == "SN123456_intercom"
+    assert entry.translation_key == "intercom"
+    assert entry.entity_category is None
+    assert entry.disabled_by is None
+
+
+async def test_no_intercom_without_a_speaker(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    mock_camera.caps = frozenset(("siren", "motion"))
+
+    await setup_integration(hass, identified_entry)
+
+    assert hass.states.get(INTERCOM) is None
+    assert "intercom" not in registered_kinds(entity_registry, identified_entry)
+
+
+async def test_unload_stops_listening_to_the_speaker(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    intercom: str,
+    mock_camera: FakeSannceCamera,
+) -> None:
+    assert mock_camera.speaker.subscribers
+
+    assert await hass.config_entries.async_unload(identified_entry.entry_id)
+    await hass.async_block_till_done()
+    mock_camera.speaker.set_owner("talk")
+    await hass.async_block_till_done()
+
+    assert mock_camera.speaker.subscribers == []
+    assert hass.states.get(INTERCOM).state == STATE_UNAVAILABLE
+
+
+async def test_unloading_during_a_talk_leaves_no_error(
+    hass: HomeAssistant,
+    identified_entry: MockConfigEntry,
+    intercom: str,
+    mock_camera: FakeSannceCamera,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_camera.speaker.set_owner("talk")
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_unload(identified_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_camera.speaker.owner is None
+    assert hass.states.get(INTERCOM).state == STATE_UNAVAILABLE
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]

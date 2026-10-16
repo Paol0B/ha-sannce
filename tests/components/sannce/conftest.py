@@ -45,6 +45,26 @@ ALL_CAPS = (
 RTSP_PATHS = {"main": "/1/1", "sub": "/1/2"}
 
 
+class FakeSpeaker:
+    def __init__(self) -> None:
+        self.owner: str | None = None
+        self.subscribers: list[Callable[[str | None], None]] = []
+
+    def subscribe(self, callback: Callable[[str | None], None]) -> Callable[[], None]:
+        self.subscribers.append(callback)
+
+        def unsubscribe() -> None:
+            with suppress(ValueError):
+                self.subscribers.remove(callback)
+
+        return unsubscribe
+
+    def set_owner(self, owner: str | None) -> None:
+        self.owner = owner
+        for callback in list(self.subscribers):
+            callback(owner)
+
+
 class FakeSannceCamera:
     def __init__(
         self,
@@ -71,6 +91,9 @@ class FakeSannceCamera:
         self.talk_active = False
         self.talk_starts = 0
         self.talk_stops = 0
+        self.speaker = FakeSpeaker()
+        self._play: asyncio.Task[Any] | None = None
+        self._preempted: set[asyncio.Task[Any]] = set()
         self._subscribers: list[Callable[[lib.Event], None]] = []
         self._availability_callbacks: list[Callable[[bool], None]] = []
         self._login_failed_callbacks: list[Callable[[lib.AuthError], None]] = []
@@ -131,6 +154,8 @@ class FakeSannceCamera:
         self.set_available(True)
 
     async def _close(self) -> None:
+        if self.speaker.owner is not None:
+            self.speaker.set_owner(None)
         self.set_available(False)
 
     async def _set_floodlight(
@@ -178,24 +203,53 @@ class FakeSannceCamera:
     async def _stop_sound(self, sample: int) -> None:
         self.sounds.append((sample, 0))
 
-    async def _play_audio(self, pcm: AsyncIterable[bytes]) -> None:
-        if self.talk_active:
-            raise lib.TalkBusyError("talk is already active")
+    def preempt(self) -> None:
+        self._end_play()
+        self.speaker.set_owner("talk")
+
+    def _end_play(self) -> None:
+        play = self._play
+        if play is not None and not play.done():
+            self._preempted.add(play)
+            play.cancel()
+
+    async def _play_audio(self, pcm: AsyncIterable[bytes]) -> bool:
+        self._end_play()
+        play = self._play = asyncio.current_task()
+        assert play is not None
         self.talk_active = True
         self.talk_starts += 1
+        self.speaker.set_owner("play")
         try:
             async for chunk in pcm:
                 self.played.append(chunk)
                 if self.audio_gate is not None:
                     await self.audio_gate.wait()
+        except asyncio.CancelledError:
+            if play not in self._preempted:
+                raise
+            play.uncancel()
+            return False
         finally:
-            self.talk_active = False
+            self._preempted.discard(play)
             self.talk_stops += 1
+            if self._play is play:
+                self._play = None
+                self.talk_active = False
+                if self.speaker.owner == "play":
+                    self.speaker.set_owner(None)
+        return True
 
 
 class FakeRelay:
-    def __init__(self, data: Mapping[str, Any], number: int = 0) -> None:
+    def __init__(
+        self,
+        data: Mapping[str, Any],
+        speaker: FakeSpeaker | None = None,
+        number: int = 0,
+    ) -> None:
         self.data = data
+        self.speaker = speaker
         self.port = 0
         self._number = number
         self.start = AsyncMock(side_effect=self._start)
@@ -323,8 +377,8 @@ def mock_find_camera() -> Generator[AsyncMock]:
 def mock_relays() -> Generator[list[FakeRelay]]:
     relays: list[FakeRelay] = []
 
-    def create(data: Mapping[str, Any]) -> FakeRelay:
-        relays.append(FakeRelay(data, len(relays)))
+    def create(data: Mapping[str, Any], speaker: FakeSpeaker) -> FakeRelay:
+        relays.append(FakeRelay(data, speaker, len(relays)))
         return relays[-1]
 
     with patch("custom_components.sannce.lib.create_relay", side_effect=create):

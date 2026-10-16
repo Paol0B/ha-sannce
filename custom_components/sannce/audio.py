@@ -115,7 +115,7 @@ async def _tail(stream: asyncio.StreamReader) -> bytes:
     return tail
 
 
-async def _join(task: asyncio.Task[None]) -> None:
+async def _join(task: asyncio.Task[bool]) -> None:
     try:
         await task
     except asyncio.CancelledError:
@@ -131,7 +131,7 @@ class AudioPlayer:
         self._hass = coordinator.hass
         self._entry = coordinator.config_entry
         self._camera = coordinator.camera
-        self._task: asyncio.Task[None] | None = None
+        self._task: asyncio.Task[bool] | None = None
         self._owner: object | None = None
         self._lock = asyncio.Lock()
 

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterable, AsyncIterator
 from unittest.mock import AsyncMock, patch
 
@@ -227,6 +228,27 @@ async def test_superseding_play_keeps_the_speaker_playing(
         await second
 
     assert hass.states.get(speaker).state == MediaPlayerState.IDLE
+
+
+async def test_a_media_play_preempted_by_talk_goes_idle_without_an_error(
+    hass: HomeAssistant,
+    speaker: str,
+    mock_camera: FakeSannceCamera,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_camera.audio_gate = asyncio.Event()
+
+    with patch.object(audio, "_ffmpeg_pcm", feed(b"\x00\x01")):
+        call = hass.async_create_task(play_media(hass, speaker, "http://host/x.mp3"))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert hass.states.get(speaker).state == MediaPlayerState.PLAYING
+
+        mock_camera.preempt()
+        await asyncio.wait_for(call, 10)
+
+    assert hass.states.get(speaker).state == MediaPlayerState.IDLE
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
 
 
 async def test_media_stop_cancels_the_play(

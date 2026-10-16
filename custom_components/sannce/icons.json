@@ -1,5 +1,13 @@
 {
   "entity": {
+    "binary_sensor": {
+      "intercom": {
+        "default": "mdi:microphone-off",
+        "state": {
+          "on": "mdi:microphone"
+        }
+      }
+    },
     "camera": {
       "main": {
         "default": "mdi:cctv"

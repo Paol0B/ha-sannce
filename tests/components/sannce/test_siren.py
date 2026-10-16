@@ -798,6 +798,23 @@ async def test_the_alarm_replaces_a_speaker_play(
     assert (mock_camera.talk_starts, mock_camera.talk_stops) == (2, 1)
 
 
+async def test_a_siren_preempted_by_talk_turns_off_without_an_error(
+    hass: HomeAssistant,
+    siren: str,
+    mock_camera: FakeSannceCamera,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    hold_audio(mock_camera)
+    await turn_on(hass, siren, tone="alarm")
+    assert hass.states.get(siren).state == STATE_ON
+
+    mock_camera.preempt()
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert hass.states.get(siren).state == STATE_OFF
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
 async def test_media_stop_leaves_the_alarm_playing(
     hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
 ) -> None:

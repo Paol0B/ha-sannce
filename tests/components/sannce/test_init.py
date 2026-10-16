@@ -34,6 +34,7 @@ async def test_setup_and_unload_entry(
     assert mock_config_entry.state is ConfigEntryState.LOADED
     (relay,) = mock_relays
     assert relay.data is mock_config_entry.data
+    assert relay.speaker is mock_camera.speaker
     relay.start.assert_awaited_once()
     relay.close.assert_not_awaited()
     mock_camera_class.assert_called_once_with(

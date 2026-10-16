@@ -48,7 +48,7 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
             always_update=False,
         )
         self.camera = camera
-        self.relay = lib.create_relay(config_entry.data)
+        self.relay = lib.create_relay(config_entry.data, camera.speaker)
         self.audio = AudioPlayer(self)
         self.connected = False
         self.base_mode: str | None = None
@@ -58,6 +58,7 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
         camera.on_availability(self._handle_availability)
         camera.on_login_failed(self._handle_login_failed)
         config_entry.async_on_unload(camera.subscribe(self._handle_event))
+        config_entry.async_on_unload(camera.speaker.subscribe(self._handle_speaker))
 
     @callback
     def async_add_event_listener(
@@ -145,6 +146,10 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
     @callback
     def _handle_login_failed(self, error: lib.AuthError) -> None:
         self.config_entry.async_start_reauth(self.hass)
+
+    @callback
+    def _handle_speaker(self, owner: str | None) -> None:
+        self.async_update_listeners()
 
     @callback
     def _handle_event(self, event: lib.Event) -> None:

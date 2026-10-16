@@ -75,29 +75,99 @@ async def test_fake_records_sounds() -> None:
     assert camera.sounds == [(2, 1), (2, 0)]
 
 
-async def test_fake_rejects_overlapping_talk() -> None:
+async def endless(streaming: asyncio.Event) -> AsyncIterator[bytes]:
+    yield b"\x00\x01"
+    streaming.set()
+    await asyncio.Event().wait()
+
+
+async def test_fake_play_owns_the_speaker_until_it_ends() -> None:
+    camera = FakeSannceCamera()
+    owners: list[str | None] = []
+    camera.speaker.subscribe(owners.append)
+
+    async def once() -> AsyncIterator[bytes]:
+        yield b"\x00\x01"
+
+    assert await camera.play_audio(once()) is True
+
+    assert owners == ["play", None]
+    assert camera.speaker.owner is None
+    assert camera.played == [b"\x00\x01"]
+    assert (camera.talk_active, camera.talk_starts, camera.talk_stops) == (
+        False,
+        1,
+        1,
+    )
+
+
+async def test_fake_preempt_ends_the_play_and_gives_talk_the_speaker() -> None:
     camera = FakeSannceCamera()
     streaming = asyncio.Event()
+    play = asyncio.create_task(camera.play_audio(endless(streaming)))
+    await streaming.wait()
 
-    async def endless() -> AsyncIterator[bytes]:
-        yield b"\x00\x01"
-        streaming.set()
-        await asyncio.Event().wait()
+    camera.preempt()
+
+    assert await play is False
+    assert camera.speaker.owner == "talk"
+    assert camera.talk_active is False
+    assert (camera.talk_starts, camera.talk_stops) == (1, 1)
+
+
+async def test_fake_newer_play_preempts_the_running_one() -> None:
+    camera = FakeSannceCamera()
+    streaming = asyncio.Event()
+    first = asyncio.create_task(camera.play_audio(endless(streaming)))
+    await streaming.wait()
 
     async def once() -> AsyncIterator[bytes]:
         yield b"\x02\x03"
 
-    first = asyncio.create_task(camera.play_audio(endless()))
+    assert await camera.play_audio(once()) is True
+
+    assert await first is False
+    assert camera.played == [b"\x00\x01", b"\x02\x03"]
+    assert camera.speaker.owner is None
+    assert camera.talk_active is False
+    assert (camera.talk_starts, camera.talk_stops) == (2, 2)
+
+
+async def test_fake_cancelled_play_still_raises() -> None:
+    camera = FakeSannceCamera()
+    streaming = asyncio.Event()
+    play = asyncio.create_task(camera.play_audio(endless(streaming)))
     await streaming.wait()
 
-    with pytest.raises(lib.TalkBusyError):
-        await camera.play_audio(once())
+    play.cancel()
 
-    first.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await first
-    assert camera.played == [b"\x00\x01"]
-    assert (camera.talk_starts, camera.talk_stops) == (1, 1)
+        await play
+    assert camera.speaker.owner is None
+    assert camera.talk_active is False
+
+
+async def test_fake_speaker_stops_calling_an_unsubscribed_callback() -> None:
+    camera = FakeSannceCamera()
+    owners: list[str | None] = []
+    unsubscribe = camera.speaker.subscribe(owners.append)
+
+    camera.speaker.set_owner("talk")
+    unsubscribe()
+    unsubscribe()
+    camera.speaker.set_owner(None)
+
+    assert owners == ["talk"]
+    assert camera.speaker.subscribers == []
+
+
+async def test_fake_close_frees_the_speaker() -> None:
+    camera = FakeSannceCamera()
+    camera.speaker.set_owner("talk")
+
+    await camera.close()
+
+    assert camera.speaker.owner is None
 
 
 async def test_fake_holds_a_play_at_the_audio_gate() -> None:

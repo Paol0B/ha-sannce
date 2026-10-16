@@ -77,6 +77,9 @@ EVENT_SENSORS = (
 )
 
 
+INTERCOM = BinarySensorEntityDescription(key="intercom", translation_key="intercom")
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: SannceConfigEntry,
@@ -84,11 +87,14 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     caps = coordinator.camera.caps
-    async_add_entities(
+    entities: list[BinarySensorEntity] = [
         SannceEventSensor(coordinator, description)
         for description in EVENT_SENSORS
         if not description.caps or description.caps & caps
-    )
+    ]
+    if "speaker" in caps:
+        entities.append(SannceIntercomSensor(coordinator, INTERCOM))
+    async_add_entities(entities)
 
 
 class SannceEventSensor(SannceEntity, BinarySensorEntity):
@@ -129,3 +135,9 @@ class SannceEventSensor(SannceEntity, BinarySensorEntity):
         else:
             self._active.discard(key)
         self.async_write_ha_state()
+
+
+class SannceIntercomSensor(SannceEntity, BinarySensorEntity):
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.camera.speaker.owner == "talk"

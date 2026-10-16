@@ -119,6 +119,9 @@
   },
   "entity": {
     "binary_sensor": {
+      "intercom": {
+        "name": "Intercom"
+      },
       "intrusion": {
         "name": "Intrusion"
       },

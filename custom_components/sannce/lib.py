@@ -26,6 +26,7 @@ from .sannce_aio import (
     RtspRelay,
     SannceCamera,
     SannceError,
+    Speaker,
     TalkBusyError,
     discover,
     find_camera,
@@ -43,6 +44,7 @@ __all__ = [
     "RtspRelay",
     "SannceCamera",
     "SannceError",
+    "Speaker",
     "TalkBusyError",
     "create_camera",
     "create_relay",
@@ -63,9 +65,10 @@ def create_camera(hass: HomeAssistant, data: Mapping[str, Any]) -> SannceCamera:
     )
 
 
-def create_relay(data: Mapping[str, Any]) -> RtspRelay:
+def create_relay(data: Mapping[str, Any], speaker: Speaker) -> RtspRelay:
     return RtspRelay(
         data[CONF_HOST],
         data.get(CONF_RTSP_PORT, DEFAULT_RTSP_PORT),
         listen_host=RELAY_HOST,
+        speaker=speaker,
     )

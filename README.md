@@ -112,6 +112,7 @@ To change the address, the login or the ports, open the entry's menu and pick Re
 | `binary_sensor` | Motion, Person, Vehicle | Pushed by the camera. Motion is on during a motion or vehicle event. Person is unavailable while the Motion detection switch is on. |
 | `binary_sensor` | Intrusion, Line crossing, Tamper | Pushed by the camera. Tamper is the lens cover. Disabled by default. |
 | `binary_sensor` | Video loss | Diagnostic. Disabled by default. |
+| `binary_sensor` | Intercom | On while a live talk owns the camera speaker. Created with the Speaker. |
 | `light` | Floodlight | On, off and brightness. See Known limits. |
 | `select` | Floodlight mode | Infrared, Color or Smart. The mode the camera returns to when the Floodlight goes off. |
 | `siren` | Siren | Default tone `alarm`: a generated siren, 800 and 1000 Hz, through the camera speaker. Tones `sound_1` to `sound_N` are the camera's spoken warnings, replayed every 5 s. Up to 300 s. |
@@ -120,7 +121,7 @@ To change the address, the login or the ports, open the entry's menu and pick Re
 | `number` | Volume, Motion sensitivity | Configuration entities, 0 to 100. Volume sets the speaker loudness, for the siren and the Speaker. Verified on the I91FX: quieter at 30 %. |
 | `media_player` | Speaker | Plays TTS and media-source audio on the camera speaker. Supports stop. |
 
-The camera reports which features it has. The integration creates an entity only when the camera has its feature. That covers Motion, Person, Vehicle, Floodlight, Floodlight mode, Siren, Speaker, the switches and the numbers. The Speaker and the `alarm` tone need the RTSP backchannel. Clear, Fluent, Intrusion, Line crossing, Tamper and Video loss always appear. Intrusion, Line crossing, Tamper and Video loss start disabled. Enable the ones you need on the device page.
+The camera reports which features it has. The integration creates an entity only when the camera has its feature. That covers Motion, Person, Vehicle, Floodlight, Floodlight mode, Siren, Speaker, Intercom, the switches and the numbers. The Speaker, the Intercom and the `alarm` tone need the RTSP backchannel. Clear, Fluent, Intrusion, Line crossing, Tamper and Video loss always appear. Intrusion, Line crossing, Tamper and Video loss start disabled. Enable the ones you need on the device page.
 
 ## Data updates
 
@@ -202,10 +203,10 @@ data:
 - **Person needs all-motion detection off.** Person is unavailable while the camera's all-motion detection (the Motion detection switch) is on, because the camera does not tell a person from other motion then. There is no animal detection, no recording switch and no push-notification switch.
 - **Detection switches may be locked.** The Motion detection switch writes only the camera's all-motion flag. The vendor app sets person and vehicle together with that flag and locks them while it is on. The app also refuses to turn person and vehicle off in Smart light mode. The camera may enforce the same rules. Then the person and vehicle switches can read off while the camera treats them as on. Some changes can fail. Not verified. Check 9.7 of the hardware checklist covers it. The protocol spec has details in its Light mode and Motion detection sections.
 - **The built-in tones are spoken warnings.** `sound_1` to `sound_3` are the camera's recorded voice messages, not a siren. The siren sends the chosen one again every 5 s until the duration ends or you turn it off, up to 300 s. The stop action and the length of each message are not yet confirmed on the camera.
-- **The siren and the Speaker share the camera speaker.** It plays one sound at a time. A Speaker play (TTS or media) stops the `alarm` tone and turns the siren off. Turning the siren on with `alarm` stops a Speaker play. Stopping the Speaker leaves the siren alone.
-- **go2rtc holds the speaker channel.** After a two-way audio (WebRTC) session, Home Assistant's go2rtc keeps the camera's audio channel open for about 30 s. A speaker play in that window may be refused.
+- **The siren, the Speaker and live talk share the camera speaker.** The camera plays one source at a time, and the newest start wins. A Speaker play (TTS or media) stops the `alarm` tone and turns the siren off. Turning the siren on with `alarm` stops a Speaker play. A talk that starts stops both. The siren then turns off and the Speaker goes idle, with no error. Stopping the Speaker leaves the siren alone.
+- **The Intercom sensor shows talk.** `binary_sensor.<base>_intercom` is on while a talk owns the speaker. A talk starts with the first speech after a pause. It ends after 1 s without speech.
 - **A dropped live view may stay open.** After a network drop during a live view that followed a talk, go2rtc may keep the camera stream open with no viewer until Home Assistant restarts.
-- **Two talkers mix.** Two people talking at the same time on the same camera mix their audio.
+- **Two talkers do not mix.** When two people talk on the same camera, the one who started last is heard. The other is muted.
 - **Rule sensors may stay silent.** Intrusion, Line crossing, Tamper and Video loss exist on every camera. The I91FX may never send those events, so they start disabled. Enable the ones you need.
 - **Events clear on a timer.** The camera sends one stop at the end of an event. If a stop is lost, a sensor turns off 10 seconds after the last start.
 - **The camera clock needs NTP.** Set up NTP on the camera. Without it the I91FX clock read year 2000 after a reboot. Event times in Home Assistant use Home Assistant's own clock.
@@ -221,7 +222,7 @@ data:
 - **Entities are unavailable.** The camera connection dropped. The log says `Camera IP is unavailable`. The integration keeps retrying and waits up to 60 seconds between tries.
 - **A rule sensor never turns on.** Intrusion, Line crossing, Tamper and Video loss start disabled. The camera may also never send those events.
 - **The Speaker entity is missing.** It appears only when the camera offers the RTSP backchannel on `/1/1`.
-- **The speaker stays silent.** It needs the `ffmpeg` binary. The log names the ffmpeg error. A play right after a WebRTC session may be refused, see Known limits.
+- **The speaker stays silent.** It needs the `ffmpeg` binary. The log names the ffmpeg error. A talk or a siren that starts later takes the speaker, see Known limits.
 - **The siren will not start.** The service call fails with the camera's reason. A failure after the start only appears in the log.
 
 For more detail, turn on debug logging in `configuration.yaml`:
@@ -248,7 +249,7 @@ The integration marks every rule of the Home Assistant integration quality scale
 
 Home Assistant's own go2rtc carries your voice to the camera. It reads `camera.<base>_fluent` over RTSP and opens the camera's ONVIF backchannel. Any card with a microphone button works, such as WebRTC Camera or camera-wall-card. Open the dashboard over HTTPS, because browsers block the microphone on plain HTTP.
 
-Video reaches go2rtc through a small RTSP relay in the integration, on `127.0.0.1` and a free port. Both camera entities give the relay's URL, with the camera's login and path. The relay passes the stream unchanged. go2rtc sets up the backchannel again for each new talk on a stream it already reads, and the camera refuses that repeat. The relay answers it in the camera's place, so talk works more than once. Home Assistant's built-in go2rtc runs on the same host and reaches the relay. A go2rtc server on another host cannot. The Speaker and the siren open their own connection to the camera.
+Video reaches go2rtc through a small RTSP relay in the integration, on `127.0.0.1` and a free port. Both camera entities give the relay's URL, with the camera's login and path. The relay passes the stream unchanged, except for the backchannel. It answers go2rtc's backchannel setup itself and never sends it to the camera. It decodes the talk audio go2rtc sends and passes it to the camera speaker. So go2rtc never holds the camera's audio channel, and the siren and the Speaker work right after a talk. The newest start wins between talk, the siren and the Speaker. `binary_sensor.<base>_intercom` is on while a talk owns the speaker. Home Assistant's built-in go2rtc runs on the same host and reaches the relay. A go2rtc server on another host cannot. Talk, the Speaker and the siren share one audio session to the camera.
 
 The bench checks that go2rtc accepts audio from a client and opens the backchannel of the simulated camera, also for a second talk while the first is attached. No browser takes part, so no audio flows there. On the I91FX, talk from the wall card works twice in a row with the live view up, with Home Assistant on the host network. On a Docker bridge network WebRTC does not connect, because go2rtc offers no host candidate for a Docker address.
 
