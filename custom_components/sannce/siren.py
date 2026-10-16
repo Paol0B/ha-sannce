@@ -69,10 +69,11 @@ async def _alarm_chunks(seconds: int) -> AsyncIterator[bytes]:
 async def _announce_start(
     chunks: AsyncIterator[bytes], started: asyncio.Future[None]
 ) -> AsyncIterator[bytes]:
+    # the speaker opens the camera session after the first pull; the second proves it
     async for chunk in chunks:
+        yield chunk
         if not started.done():
             started.set_result(None)
-        yield chunk
 
 
 async def async_setup_entry(

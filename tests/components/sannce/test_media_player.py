@@ -171,7 +171,7 @@ async def test_failed_play_returns_to_idle(
 async def test_a_refused_backchannel_fails_the_play_with_the_reason(
     hass: HomeAssistant, speaker: str, mock_camera: FakeSannceCamera
 ) -> None:
-    mock_camera.play_audio.side_effect = lib.TalkBusyError(
+    mock_camera.open_backchannel.side_effect = lib.TalkBusyError(
         "the camera refused the audio channel: RTSP 453"
     )
     proc = FakeProcess(b"\0" * 320, eof=True, exit_code=0)
@@ -238,7 +238,7 @@ async def test_a_media_play_preempted_by_talk_goes_idle_without_an_error(
 ) -> None:
     mock_camera.audio_gate = asyncio.Event()
 
-    with patch.object(audio, "_ffmpeg_pcm", feed(b"\x00\x01")):
+    with patch.object(audio, "_ffmpeg_pcm", feed(b"\x00\x01", b"\x02\x03")):
         call = hass.async_create_task(play_media(hass, speaker, "http://host/x.mp3"))
         for _ in range(10):
             await asyncio.sleep(0)

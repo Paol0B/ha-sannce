@@ -170,6 +170,24 @@ async def test_fake_close_frees_the_speaker() -> None:
     assert camera.speaker.owner is None
 
 
+async def test_fake_pulls_one_chunk_before_it_opens_the_backchannel() -> None:
+    camera = FakeSannceCamera()
+    camera.open_backchannel.side_effect = lib.TalkBusyError("RTSP 453")
+    pulled: list[bytes] = []
+
+    async def two() -> AsyncIterator[bytes]:
+        for chunk in (b"\x00\x01", b"\x02\x03"):
+            pulled.append(chunk)
+            yield chunk
+
+    with pytest.raises(lib.TalkBusyError):
+        await camera.play_audio(two())
+
+    assert pulled == [b"\x00\x01"]
+    assert camera.played == []
+    assert camera.talk_active is False
+
+
 async def test_fake_holds_a_play_at_the_audio_gate() -> None:
     camera = FakeSannceCamera()
     camera.audio_gate = gate = asyncio.Event()

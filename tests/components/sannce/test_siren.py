@@ -41,6 +41,7 @@ from custom_components.sannce import siren as sannce_siren
 from custom_components.sannce.audio import SAMPLE_RATE, SAMPLE_WIDTH
 from custom_components.sannce.const import DOMAIN
 from custom_components.sannce.sannce_aio.backchannel import Backchannel
+from custom_components.sannce.sannce_aio.speaker import Speaker
 
 from . import setup_integration
 from .conftest import ALL_CAPS, FakeSannceCamera
@@ -786,7 +787,7 @@ async def test_the_alarm_replaces_a_speaker_play(
 ) -> None:
     hold_audio(mock_camera)
 
-    with patch.object(audio, "_ffmpeg_pcm", feed(b"\x01\x02")):
+    with patch.object(audio, "_ffmpeg_pcm", feed(b"\x01\x02", b"\x03\x04")):
         play = hass.async_create_task(play_on_speaker(hass, "http://host/tts.mp3"))
         await until(lambda: mock_camera.talk_active)
 
@@ -833,7 +834,7 @@ async def test_media_stop_leaves_the_alarm_playing(
 async def test_a_refused_audio_channel_fails_the_alarm(
     hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
 ) -> None:
-    mock_camera.play_audio.side_effect = lib.TalkBusyError(
+    mock_camera.open_backchannel.side_effect = lib.TalkBusyError(
         "the camera refused the audio channel: RTSP 453"
     )
 
@@ -935,40 +936,34 @@ async def test_a_newer_alarm_replaces_one_that_has_not_started(
     hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
 ) -> None:
     accept = asyncio.Event()
-    working = mock_camera.play_audio.side_effect
 
-    async def slow_open(pcm: AsyncIterable[bytes]) -> None:
-        if mock_camera.play_audio.await_count == 1:
+    async def slow_open() -> None:
+        if mock_camera.open_backchannel.await_count == 1:
             await accept.wait()
-        await working(pcm)
 
-    mock_camera.play_audio.side_effect = slow_open
+    mock_camera.open_backchannel.side_effect = slow_open
     hold_audio(mock_camera)
     older = hass.async_create_task(turn_on(hass, siren, tone="alarm"))
-    await until(lambda: mock_camera.play_audio.await_count == 1)
+    await until(lambda: mock_camera.open_backchannel.await_count == 1)
 
     await turn_on(hass, siren, tone="alarm")
     await older
 
     assert hass.states.get(siren).state == STATE_ON
     assert mock_camera.talk_active is True
-    assert mock_camera.talk_starts == 1
+    assert (mock_camera.talk_starts, mock_camera.talk_stops) == (2, 1)
 
 
 async def test_the_alarm_turn_on_waits_for_the_camera_to_take_the_tone(
     hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
 ) -> None:
     accept = asyncio.Event()
-    working = mock_camera.play_audio.side_effect
-
-    async def slow_open(pcm: AsyncIterable[bytes]) -> None:
-        await accept.wait()
-        await working(pcm)
-
-    mock_camera.play_audio.side_effect = slow_open
+    mock_camera.open_backchannel.side_effect = accept.wait
     hold_audio(mock_camera)
     call = hass.async_create_task(turn_on(hass, siren, tone="alarm"))
-    await until(lambda: mock_camera.play_audio.await_count == 1)
+    await until(lambda: mock_camera.open_backchannel.await_count == 1)
+    for _ in range(10):
+        await asyncio.sleep(0)
 
     assert not call.done()
     assert hass.states.get(siren).state == STATE_OFF
@@ -983,14 +978,7 @@ async def test_the_alarm_turn_on_waits_for_the_camera_to_take_the_tone(
 async def test_an_unanswered_alarm_start_times_out_and_stops(
     hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
 ) -> None:
-    async def stall(pcm: AsyncIterable[bytes]) -> None:
-        mock_camera.talk_active = True
-        try:
-            await asyncio.Event().wait()
-        finally:
-            mock_camera.talk_active = False
-
-    mock_camera.play_audio.side_effect = stall
+    mock_camera.open_backchannel.side_effect = asyncio.Event().wait
 
     with (
         patch.object(sannce_siren, "_START_SECONDS", 0.05),
@@ -1004,6 +992,50 @@ async def test_an_unanswered_alarm_start_times_out_and_stops(
     assert hass.states.get(siren).state == STATE_OFF
 
 
+class RecordingChannel:
+    def __init__(self, refusal: Exception | None = None) -> None:
+        self.started: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self.refusal = refusal
+        self.started_at_send: list[bool] = []
+
+    async def open(self) -> None:
+        if self.refusal is not None:
+            raise self.refusal
+
+    async def send(self, frame: bytes) -> None:
+        self.started_at_send.append(self.started.done())
+
+    async def close(self) -> None:
+        pass
+
+
+async def play_alarm(channel: RecordingChannel) -> None:
+    speaker = Speaker(lambda: channel)
+    tone = sannce_siren._announce_start(sannce_siren._alarm_chunks(1), channel.started)
+    try:
+        await speaker.play(tone)
+    finally:
+        await speaker.close()
+
+
+async def test_the_real_speaker_announces_the_alarm_after_its_first_write() -> None:
+    channel = RecordingChannel()
+
+    await play_alarm(channel)
+
+    assert channel.started_at_send[0] is False
+    assert channel.started_at_send[-1] is True
+
+
+async def test_the_real_speaker_never_announces_an_alarm_it_could_not_open() -> None:
+    channel = RecordingChannel(lib.TalkBusyError("RTSP 453"))
+
+    with pytest.raises(lib.TalkBusyError):
+        await play_alarm(channel)
+
+    assert not channel.started.done()
+
+
 def test_the_start_bound_outlasts_a_backchannel_connect_and_reply() -> None:
     timeout = inspect.signature(Backchannel).parameters["timeout"].default
 
@@ -1014,17 +1046,7 @@ async def test_a_cancelled_alarm_turn_on_stops_the_tone(
     hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
 ) -> None:
     accept = asyncio.Event()
-
-    async def slow_open(pcm: AsyncIterable[bytes]) -> None:
-        mock_camera.talk_active = True
-        try:
-            await accept.wait()
-            async for chunk in pcm:
-                mock_camera.played.append(chunk)
-        finally:
-            mock_camera.talk_active = False
-
-    mock_camera.play_audio.side_effect = slow_open
+    mock_camera.open_backchannel.side_effect = accept.wait
     call = hass.async_create_task(turn_on(hass, siren, tone="alarm"))
     await until(lambda: mock_camera.talk_active)
 
@@ -1048,9 +1070,12 @@ async def test_an_alarm_failure_after_the_start_is_logged(
     release = asyncio.Event()
 
     async def drop(pcm: AsyncIterable[bytes]) -> None:
+        sent = 0
         async for _ in pcm:
-            await release.wait()
-            raise lib.ConnectError("audio send failed")
+            sent += 1
+            if sent == 2:
+                await release.wait()
+                raise lib.ConnectError("audio send failed")
 
     mock_camera.play_audio.side_effect = drop
     await turn_on(hass, siren, tone="alarm")
@@ -1093,15 +1118,9 @@ async def test_losing_the_connection_during_the_alarm_start_stops_it(
     hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
 ) -> None:
     accept = asyncio.Event()
-    working = mock_camera.play_audio.side_effect
-
-    async def slow_open(pcm: AsyncIterable[bytes]) -> None:
-        await accept.wait()
-        await working(pcm)
-
-    mock_camera.play_audio.side_effect = slow_open
+    mock_camera.open_backchannel.side_effect = accept.wait
     call = hass.async_create_task(turn_on(hass, siren, tone="alarm"))
-    await until(lambda: mock_camera.play_audio.await_count == 1)
+    await until(lambda: mock_camera.open_backchannel.await_count == 1)
 
     mock_camera.set_available(False)
     accept.set()
@@ -1118,20 +1137,18 @@ async def test_cancelling_an_older_alarm_turn_on_leaves_the_newer_one(
     hass: HomeAssistant, siren: str, mock_camera: FakeSannceCamera
 ) -> None:
     closing = asyncio.Event()
-    working = mock_camera.play_audio.side_effect
 
-    async def slow_close(pcm: AsyncIterable[bytes]) -> None:
-        if mock_camera.play_audio.await_count == 1:
+    async def slow_close() -> None:
+        if mock_camera.open_backchannel.await_count == 1:
             try:
                 await asyncio.Event().wait()
             finally:
                 await closing.wait()
-        await working(pcm)
 
-    mock_camera.play_audio.side_effect = slow_close
+    mock_camera.open_backchannel.side_effect = slow_close
     hold_audio(mock_camera)
     older = hass.async_create_task(turn_on(hass, siren, tone="alarm"))
-    await until(lambda: mock_camera.play_audio.await_count == 1)
+    await until(lambda: mock_camera.open_backchannel.await_count == 1)
     newer = hass.async_create_task(turn_on(hass, siren, tone="alarm"))
     for _ in range(10):
         await asyncio.sleep(0)

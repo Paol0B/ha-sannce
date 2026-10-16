@@ -86,7 +86,7 @@ class FakeSannceCamera:
         self.sound_count = 3
         self.sounds: list[tuple[int, int]] = []
         self.played: list[bytes] = []
-        # a play waits after each chunk until the gate is set
+        # a play waits before each chunk after the first until the gate is set
         self.audio_gate: asyncio.Event | None = None
         self.talk_active = False
         self.talk_starts = 0
@@ -118,6 +118,7 @@ class FakeSannceCamera:
         self.play_sound = AsyncMock(side_effect=self._play_sound)
         self.stop_sound = AsyncMock(side_effect=self._stop_sound)
         self.play_audio = AsyncMock(side_effect=self._play_audio)
+        self.open_backchannel = AsyncMock()
 
     def rtsp_url(self, stream: str = "main") -> str:
         return f"rtsp://{USERNAME}:{PASSWORD}@{HOST}:554{RTSP_PATHS[stream]}"
@@ -220,11 +221,16 @@ class FakeSannceCamera:
         self.talk_active = True
         self.talk_starts += 1
         self.speaker.set_owner("play")
+        opened = False
         try:
             async for chunk in pcm:
-                self.played.append(chunk)
-                if self.audio_gate is not None:
+                # the Speaker pulls the first chunk before it opens the camera session
+                if not opened:
+                    await self.open_backchannel()
+                    opened = True
+                elif self.audio_gate is not None:
                     await self.audio_gate.wait()
+                self.played.append(chunk)
         except asyncio.CancelledError:
             if play not in self._preempted:
                 raise
