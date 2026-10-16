@@ -50,7 +50,7 @@ The bench runs the integration in a real Home Assistant against a simulated came
 
 - `bench/compose.yaml` sets the camera login once. The simulator and the RTSP server both take it from there.
 - RTSP `/1/1` is 1280x720 H.264 with AAC audio. `/1/2` is 640x360 H.264 with G.711 A-law audio. The video is 4:2:0 (`yuv420p`), so browsers and hardware decoders accept it. Both streams show a test pattern and a 440 Hz tone, for example `rtsp://admin:admin123@172.31.250.10:554/1/2`.
-- The simulator answers RTSP on 554 and relays video from mediamtx on 8554. It adds the backchannel track the real camera has and records what it receives.
+- The simulator answers RTSP on 554 and relays video from mediamtx on 8554. It adds the backchannel track the real camera has. Like the camera, it records only the first open backchannel session.
 - Only this machine and the bench network reach the camera and the control API.
 
 ## Control API
@@ -94,6 +94,6 @@ curl -s --json '{"seconds": 5}' http://172.31.250.10:8099/drop
 - Home Assistant runs as root, so `bench/ha-config/` holds root-owned files. `reset` deletes them from a container.
 - `bench/ha-config/` and `bench/media/` are git-ignored.
 - Live view and two-way talk in a browser on this machine need `up --host-network`, see [Network modes](#network-modes).
-- The suite sends go2rtc a WebRTC offer for Fluent. It checks that the answer accepts audio and that go2rtc opens the camera's backchannel. No browser takes part, so no audio flows.
-- go2rtc keeps the camera's backchannel open about 30 s after a WebRTC session ends. The WebRTC test waits for it to close, so it adds about 30 s to the run.
+- The suite sends go2rtc a WebRTC offer for Fluent. It checks that the answer accepts audio and that the integration's relay answers go2rtc's backchannel `SETUP` itself, so the simulator never sees it. No browser takes part, so no audio flows.
+- go2rtc keeps its backchannel open about 30 s after a WebRTC session ends, but only toward the relay. The suite turns the siren on right after a session and checks that the simulator records it.
 - If the config holds another owner, `up` retries the `dev` login for up to 5 minutes, then stops with `error: signing in to http://127.0.0.1:8123 as dev: still 'login refused' after 300 s`. Run `scripts/bench.sh reset`.

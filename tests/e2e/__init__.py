@@ -10,7 +10,7 @@ ENTITY_KEYS = frozenset(
         "motion", "person", "vehicle", "intrusion", "line", "tamper", "video_loss",
         "sub", "main", "floodlight", "light_mode",
         "person_detection", "vehicle_detection", "motion_detection", "siren_on_event",
-        "siren", "speaker", "volume", "motion_sensitivity",
+        "siren", "speaker", "volume", "motion_sensitivity", "intercom",
     }
 )
 # these start disabled, so they have no state
