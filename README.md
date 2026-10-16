@@ -14,7 +14,7 @@ The acceptance run with Home Assistant on that camera is done (2026-10-15):
 - On the video, the floodlight goes on, to 30 % and off.
 - Volume drives the speaker. Motion sensitivity and Siren on event reach the camera.
 - The generated `alarm` tone is heard and stops at once on turn_off. TTS through the speaker is heard.
-- Two-way talk from the wall card works twice in a row through the RTSP relay, with the live view up and Home Assistant on the host network. On a Docker bridge network WebRTC does not connect, see Live push-to-talk.
+- Two-way talk from the wall card worked twice in a row through an earlier relay that answered only the repeated backchannel setup, with the live view up and Home Assistant on the host network. The current relay is not yet checked on the camera. On a Docker bridge network WebRTC does not connect, see Live push-to-talk.
 
 Not verified on the camera:
 
@@ -247,11 +247,13 @@ The integration marks every rule of the Home Assistant integration quality scale
 
 ## Live push-to-talk
 
-Home Assistant's own go2rtc carries your voice to the camera. It reads `camera.<base>_fluent` over RTSP and opens the camera's ONVIF backchannel. Any card with a microphone button works, such as WebRTC Camera or camera-wall-card. Open the dashboard over HTTPS, because browsers block the microphone on plain HTTP.
+Home Assistant's own go2rtc carries your voice to the integration's RTSP relay. go2rtc reads `camera.<base>_fluent` over RTSP through the relay. The camera lists a backchannel, so go2rtc sets it up for talk. Any card with a microphone button works, such as WebRTC Camera or camera-wall-card. Open the dashboard over HTTPS, because browsers block the microphone on plain HTTP.
 
-Video reaches go2rtc through a small RTSP relay in the integration, on `127.0.0.1` and a free port. Both camera entities give the relay's URL, with the camera's login and path. The relay passes the stream unchanged, except for the backchannel. It answers go2rtc's backchannel setup itself and never sends it to the camera. It decodes the talk audio go2rtc sends and passes it to the camera speaker. So go2rtc never holds the camera's audio channel, and the siren and the Speaker work right after a talk. The newest start wins between talk, the siren and the Speaker. `binary_sensor.<base>_intercom` is on while a talk owns the speaker. Home Assistant's built-in go2rtc runs on the same host and reaches the relay. A go2rtc server on another host cannot. Talk, the Speaker and the siren share one audio session to the camera.
+The relay listens on `127.0.0.1` and a free port. Both camera entities give its URL, with the camera's login and path. It passes the stream unchanged, except for the backchannel. The relay answers go2rtc's backchannel setup itself and never sends it to the camera. It decodes the voice go2rtc sends and passes it to the camera's speaker. So go2rtc never holds the camera's audio channel, and the siren and the Speaker work right after a talk.
 
-The bench checks that go2rtc accepts audio from a client and opens the backchannel of the simulated camera, also for a second talk while the first is attached. No browser takes part, so no audio flows there. On the I91FX, talk from the wall card works twice in a row with the live view up, with Home Assistant on the host network. On a Docker bridge network WebRTC does not connect, because go2rtc offers no host candidate for a Docker address.
+The newest start wins between talk, the `alarm` siren tone and the Speaker. A talk starts with the first speech after a pause and ends after 1 s without speech. `binary_sensor.<base>_intercom` is on while a talk owns the speaker. Talk, the `alarm` tone and the Speaker share one audio session to the camera.
+
+Home Assistant's built-in go2rtc runs on the same host and reaches the relay. A go2rtc server on another host cannot. On a Docker bridge network WebRTC does not connect, because go2rtc offers no host candidate for a Docker address. Run Home Assistant on the host network for talk.
 
 ## Development
 
