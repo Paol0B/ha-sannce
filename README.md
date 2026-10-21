@@ -1,8 +1,49 @@
 # SANNCE for Home Assistant
 
+[![CI](https://github.com/Paol0B/ha-sannce/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Paol0B/ha-sannce/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Home Assistant 2026.10+](https://img.shields.io/badge/Home%20Assistant-2026.10%2B-41BDF5.svg)](https://www.home-assistant.io/)
+[![IoT class: local push](https://img.shields.io/badge/IoT%20class-local%20push-brightgreen.svg)](#data-updates)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
+
 Home Assistant integration for SANNCE wired IP cameras. It talks to the camera over your LAN and needs no cloud account.
 
 SANNCE Life cameras are Tiandy OEM devices. The reference model is the I91FW (4K, PoE, white light and infrared). The camera reports it as I91FX. Other models may work.
+
+> [!IMPORTANT]
+> This is an independent project. SANNCE, Tiandy and the Home Assistant project do not make, endorse or support it. Read [Legal](#legal) before you use it.
+
+## Features
+
+- **Video**: the main stream (Clear) and the sub stream (Fluent) over RTSP.
+- **Pushed events**: motion, person and vehicle, plus intrusion, line crossing, tamper and video loss.
+- **Floodlight**: on, off, brightness, and the mode the camera returns to.
+- **Siren**: a generated alarm tone, or the camera's spoken warnings.
+- **Speaker**: TTS and media through the camera.
+- **Two-way talk** from any dashboard card with a microphone button.
+- **Settings**: person, vehicle and motion detection, motion sensitivity, volume.
+- **Setup from the UI**: LAN search, DHCP discovery, reauthentication and reconfigure.
+- **Local only**: the integration talks to the camera and nothing else.
+
+## Contents
+
+- [Status](#status)
+- [Supported devices](#supported-devices)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Setup](#setup)
+- [Entities](#entities)
+- [Data updates](#data-updates)
+- [Live push-to-talk](#live-push-to-talk)
+- [Use cases](#use-cases)
+- [Automation examples](#automation-examples)
+- [Known limits](#known-limits)
+- [Troubleshooting](#troubleshooting)
+- [Remove](#remove)
+- [Security](#security)
+- [Development](#development)
+- [Legal](#legal)
+- [License](#license)
 
 ## Status
 
@@ -14,7 +55,7 @@ The acceptance run with Home Assistant on that camera is done (2026-10-15):
 - On the video, the floodlight goes on, to 30 % and off.
 - Volume drives the speaker. Motion sensitivity and Siren on event reach the camera.
 - The generated `alarm` tone is heard and stops at once on turn_off. TTS through the speaker is heard.
-- Two-way talk from the wall card worked twice in a row, with the live view up. Home Assistant ran on the host network. That test used an earlier relay, which answered only the repeated backchannel setup. The current relay passed a scripted check on the camera, without the wall card. On a Docker bridge network WebRTC does not connect, see Live push-to-talk.
+- Two-way talk from the wall card worked twice in a row, with the live view up. Home Assistant ran on the host network. That test used an earlier relay, which answered only the repeated backchannel setup. The current relay passed a scripted check on the camera, without the wall card. On a Docker bridge network WebRTC does not connect, see [Live push-to-talk](#live-push-to-talk).
 
 Not verified on the camera:
 
@@ -26,7 +67,7 @@ Not verified on the camera:
 
 [docs/hardware-checklist.md](docs/hardware-checklist.md), Acceptance, has each result.
 
-Everything else comes from the vendor app's code and from the simulator the tests use. The simulator follows the same spec as the code, so it shows the code matches the spec, not the camera.
+The rest is not measured on a camera yet. It follows the protocol spec. The tests run the code against a simulator built from the same spec, so they show the code matches the spec, not the camera.
 
 - [docs/protocol.md](docs/protocol.md) is the protocol spec. Each claim is tagged `static`, `inferred` or `verified`. The I91FX results are `verified`.
 - [docs/hardware-checklist.md](docs/hardware-checklist.md) lists the checks to run when a camera is on the bench.
@@ -34,7 +75,7 @@ Everything else comes from the vendor app's code and from the simulator the test
 ## Supported devices
 
 - SANNCE wired cameras that pair with the SANNCE Life app. They are Tiandy OEM devices and speak Tiandy's private protocol. The I91FX carries it over a WebSocket on port 3002.
-- The reference model is the I91FW. Only the I91FX has been measured, see Status.
+- The reference model is the I91FW. Only the I91FX has been measured, see [Status](#status).
 - Cameras for the SANNCE HOME app run a different platform. They are not supported.
 - One camera per entry. NVRs are not supported: the integration uses channel 1 for settings and video.
 
@@ -43,18 +84,19 @@ Everything else comes from the vendor app's code and from the simulator the test
 - Home Assistant 2026.10 or newer. Older versions are untested.
 - A camera on the same LAN, activated, with an admin password.
 - TCP from Home Assistant to the camera: port 3002 (events), 80 (settings) and 554 (video and speaker).
-- A fixed camera address works best. The integration can follow a new address in one case only. Home Assistant must see the camera's DHCP request. The entry must also match the camera's MAC address or serial number. See Discovery.
+- A fixed camera address works best. The integration can follow a new address in one case only. Home Assistant must see the camera's DHCP request. The entry must also match the camera's MAC address or serial number. See [Discovery](#discovery).
 - The `ffmpeg` binary, for the Speaker only. The siren needs none. The official container image has ffmpeg.
 
 ## Install
 
 ### HACS
 
-HACS cannot install the integration yet. HACS downloads only the files git tracks, and the camera library copy is not one of them. HACS works once `sannce-aio` is on PyPI and `manifest.json` lists it under `requirements`, see [docs/release.md](docs/release.md#after-the-first-pypi-release). Until then, use Manual or Container, over SSH.
+> [!NOTE]
+> HACS cannot install the integration yet. HACS downloads only the files git tracks, and the camera library copy is not one of them. HACS works once `sannce-aio` is on PyPI and `manifest.json` lists it under `requirements`, see [docs/release.md](docs/release.md#after-the-first-pypi-release). Until then, use Manual or Container, over SSH.
 
 ### Manual
 
-Clone the repository with its `lib` submodule, as Development says, and run `scripts/vendor-lib.sh`. It copies the camera library into `custom_components/sannce/sannce_aio/` with rsync. Then copy `custom_components/sannce` to `<config>/custom_components/sannce` and restart Home Assistant. Nothing else needs installing.
+Clone the repository with its `lib` submodule, as [Development](#development) says, and run `scripts/vendor-lib.sh`. It copies the camera library into `custom_components/sannce/sannce_aio/` with rsync. Then copy `custom_components/sannce` to `<config>/custom_components/sannce` and restart Home Assistant. Nothing else needs installing.
 
 ### Container, over SSH
 
@@ -63,7 +105,7 @@ scripts/deploy.sh HOST [CONTAINER] [CONFIG_PATH]
 ENGINE=podman scripts/deploy.sh HOST homeassistant /path/to/config
 ```
 
-The script copies the camera library into the integration with `scripts/vendor-lib.sh`, copies `custom_components/sannce` to `HOST` with rsync, then restarts the container. It needs the `lib` submodule, see Development.
+The script copies the camera library into the integration with `scripts/vendor-lib.sh`, copies `custom_components/sannce` to `HOST` with rsync, then restarts the container. It needs the `lib` submodule, see [Development](#development).
 
 | Argument | Meaning | Default |
 |---|---|---|
@@ -77,7 +119,7 @@ Both machines need rsync 3.0 or newer. The SSH user must write to the config dir
 
 ## Setup
 
-Open Settings, Devices & services, Add integration, and pick SANNCE.
+Open **Settings**, **Devices & services**, **Add integration**, and pick **SANNCE**.
 
 - Enter the camera address, user name and password. The user name defaults to `admin`.
 - Or leave the address empty to search the LAN. Pick the camera, then enter its login. The search uses UDP multicast, so a container probably needs host networking.
@@ -101,7 +143,7 @@ An address alone never updates an entry. The integration never moves an entry to
 
 ### Reconfigure
 
-To change the address, the login or the ports, open the entry's menu and pick Reconfigure. Leave the password empty to keep the current one. The integration checks the new settings with the camera before it saves them. It refuses an address that another entry uses. It also refuses an address that answers with another camera's serial number or MAC address. A camera at a new address may report no serial number or MAC address to compare. Then nothing proves it is the same camera, so the entry drops the serial number and MAC address it stored.
+To change the address, the login or the ports, open the entry's menu and pick **Reconfigure**. Leave the password empty to keep the current one. The integration checks the new settings with the camera before it saves them. It refuses an address that another entry uses. It also refuses an address that answers with another camera's serial number or MAC address. A camera at a new address may report no serial number or MAC address to compare. Then nothing proves it is the same camera, so the entry drops the serial number and MAC address it stored.
 
 ## Entities
 
@@ -113,7 +155,7 @@ To change the address, the login or the ports, open the entry's menu and pick Re
 | `binary_sensor` | Intrusion, Line crossing, Tamper | Pushed by the camera. Tamper is the lens cover. Disabled by default. |
 | `binary_sensor` | Video loss | Diagnostic. Disabled by default. |
 | `binary_sensor` | Intercom | On while a live talk owns the camera speaker. Created with the Speaker. |
-| `light` | Floodlight | On, off and brightness. See Known limits. |
+| `light` | Floodlight | On, off and brightness. See [Known limits](#known-limits). |
 | `select` | Floodlight mode | Infrared, Color or Smart. The mode the camera returns to when the Floodlight goes off. |
 | `siren` | Siren | Default tone `alarm`: a generated siren, 800 and 1000 Hz, through the camera speaker. Tones `sound_1` to `sound_N` are the camera's spoken warnings, replayed every 5 s. Up to 300 s. |
 | `switch` | Person detection, Vehicle detection, Motion detection | Configuration entities. |
@@ -129,18 +171,30 @@ The camera pushes its events over the private protocol, so the binary sensors ch
 
 A dropped camera connection makes every entity unavailable, not off, until it returns. The log gets one info line when the connection drops and one when it returns. A failed settings read makes the light, the select, the switches and the numbers unavailable. If the camera refuses the login 3 times while reconnecting, the integration stops retrying and Home Assistant asks for the password again.
 
+## Live push-to-talk
+
+Home Assistant's own go2rtc carries your voice to the integration's RTSP relay. go2rtc reads `camera.<base>_fluent` over RTSP through the relay. The camera lists a backchannel, so go2rtc sets it up for talk. Any card with a microphone button works, such as WebRTC Camera or camera-wall-card. Open the dashboard over HTTPS, because browsers block the microphone on plain HTTP.
+
+The relay listens on `127.0.0.1` and a free port. Both camera entities give its URL, with the camera's login and path. It passes the stream unchanged, except for the backchannel. The relay answers go2rtc's backchannel setup itself and never sends it to the camera. It decodes the voice go2rtc sends and passes it to the camera's speaker. So go2rtc never holds the camera's audio channel, and the siren and the Speaker work right after a talk.
+
+The newest start wins between talk, the `alarm` siren tone and the Speaker. A talk starts with the first speech after a pause and ends after 1 s without speech. `binary_sensor.<base>_intercom` is on while a talk owns the speaker. Talk, the `alarm` tone and the Speaker share one audio session to the camera.
+
+> [!NOTE]
+> Home Assistant's built-in go2rtc runs on the same host and reaches the relay. A go2rtc server on another host cannot. On a Docker bridge network WebRTC does not connect, because go2rtc offers no host candidate for a Docker address. Run Home Assistant on the host network for talk.
+
 ## Use cases
 
 - Get a phone notification when a vehicle stops at the gate.
 - Light the yard and speak a warning when someone walks up at night.
 - Sound the siren from an alarm automation.
-- Turn person and vehicle detection off while you are home, and on when you leave. The camera may lock these switches, see Known limits.
+- Turn person and vehicle detection off while you are home, and on when you leave. The camera may lock these switches, see [Known limits](#known-limits).
 
 ## Automation examples
 
 The entity IDs below assume the camera is named I91FX. Check yours on the device page. `notify.notify` and `tts.home_assistant_cloud` are placeholders: replace them with your own notify action and TTS entity.
 
-Notify on a vehicle:
+<details>
+<summary>Notify on a vehicle</summary>
 
 ```yaml
 automation:
@@ -155,7 +209,12 @@ automation:
           message: A vehicle is at the gate.
 ```
 
-Light the yard and speak a warning at night, then turn the lamp off after two minutes. The camera returns to the mode in Floodlight mode:
+</details>
+
+<details>
+<summary>Light the yard and speak a warning at night</summary>
+
+The lamp turns off after two minutes. The camera returns to the mode in Floodlight mode.
 
 ```yaml
 automation:
@@ -184,7 +243,10 @@ automation:
           entity_id: light.i91fx_floodlight
 ```
 
-Sound the siren for 30 seconds:
+</details>
+
+<details>
+<summary>Sound the siren for 30 seconds</summary>
 
 ```yaml
 action: siren.turn_on
@@ -194,6 +256,8 @@ data:
   tone: alarm
   duration: 30
 ```
+
+</details>
 
 ## Known limits
 
@@ -210,7 +274,7 @@ data:
 - **Rule sensors may stay silent.** Intrusion, Line crossing, Tamper and Video loss exist on every camera. The I91FX may never send those events, so they start disabled. Enable the ones you need.
 - **Events clear on a timer.** The camera sends one stop at the end of an event. If a stop is lost, a sensor turns off 10 seconds after the last start.
 - **The camera clock needs NTP.** Set up NTP on the camera. Without it the I91FX clock read year 2000 after a reboot. Event times in Home Assistant use Home Assistant's own clock.
-- **No encryption.** The WebSocket is plain `ws://`. The first login message sends the password in base64, and the RTSP URL carries it. Use a trusted LAN.
+- **No encryption.** The WebSocket is plain `ws://`. The first login message sends the password in base64, and the RTSP URL carries it. Use a trusted LAN, see [Security](#security).
 - **Most DHCP prefixes are unconfirmed.** `3C:DA:6D`, `BC:51:6C` and `E4:E6:6C` come from the IEEE registry, not from a camera. Check 8.3 of the hardware checklist confirms them. `D0:3B:F4` is the I91FX's own.
 
 ## Troubleshooting
@@ -218,11 +282,11 @@ data:
 - **Cannot reach the camera.** Check that Home Assistant reaches ports 3002, 80 and 554 on the camera, for example with `nc -vz IP 3002`.
 - **Login failed.** The user name is usually `admin`. Use the password set when the camera was activated. After a password change, Home Assistant asks for the new one.
 - **The LAN search finds nothing.** The search uses UDP multicast on ports 3000 and 4000. A Home Assistant container needs host networking for it. Type the address instead.
-- **The camera is not discovered.** Home Assistant sees DHCP traffic only on the host network. The camera's MAC address must start with one of the prefixes under Discovery.
+- **The camera is not discovered.** Home Assistant sees DHCP traffic only on the host network. The camera's MAC address must start with one of the prefixes under [Discovery](#discovery).
 - **Entities are unavailable.** The camera connection dropped. The log says `Camera IP is unavailable`. The integration keeps retrying and waits up to 60 seconds between tries.
 - **A rule sensor never turns on.** Intrusion, Line crossing, Tamper and Video loss start disabled. The camera may also never send those events.
 - **The Speaker entity is missing.** It appears only when the camera offers the RTSP backchannel on `/1/1`.
-- **The speaker stays silent.** It needs the `ffmpeg` binary. The log names the ffmpeg error. A talk or a siren that starts later takes the speaker, see Known limits.
+- **The speaker stays silent.** It needs the `ffmpeg` binary. The log names the ffmpeg error. A talk or a siren that starts later takes the speaker, see [Known limits](#known-limits).
 - **The siren will not start.** The service call fails with the camera's reason. A failure after the start only appears in the log.
 
 For more detail, turn on debug logging in `configuration.yaml`:
@@ -233,31 +297,27 @@ logger:
     custom_components.sannce: debug
 ```
 
-When you report a problem, attach the diagnostics file from the device page. It redacts the host, user name, password, serial number and MAC address.
+When you report a problem, attach the diagnostics file from the device page. It redacts the host, user name, password, serial number and MAC address. Check the file and the logs for anything else private, such as other addresses on your network, before you post them in a public issue.
 
 ## Remove
 
-1. Open Settings, Devices & services, SANNCE.
-2. In the entry's menu, pick Delete. Home Assistant closes the camera sessions and removes the device and its entities.
+1. Open **Settings**, **Devices & services**, **SANNCE**.
+2. In the entry's menu, pick **Delete**. Home Assistant closes the camera sessions and removes the device and its entities.
 3. To remove the code too, remove SANNCE in HACS, or delete `<config>/custom_components/sannce` for a manual install. Then restart Home Assistant.
 
-## Quality scale
+## Security
 
-The integration marks every rule of the Home Assistant integration quality scale, up to Platinum, as done or exempt, except two rules that need publication: brands and dependency-transparency. Hassfest checks seven of the rules. The others rest on the file, the tests and mypy. Home Assistant grades only core integrations, so there is no official badge. [custom_components/sannce/quality_scale.yaml](custom_components/sannce/quality_scale.yaml) gives the status of every rule.
+The camera's protocol has no encryption. The WebSocket is plain `ws://`, the first login message carries the password in base64, and the RTSP URL holds it. Anyone who can read your LAN traffic can read the password.
 
-## Live push-to-talk
+- Keep the camera on a trusted LAN, best on its own VLAN.
+- Never forward ports 80, 554 or 3002 of the camera to the internet.
+- Give the camera a password you use nowhere else.
 
-Home Assistant's own go2rtc carries your voice to the integration's RTSP relay. go2rtc reads `camera.<base>_fluent` over RTSP through the relay. The camera lists a backchannel, so go2rtc sets it up for talk. Any card with a microphone button works, such as WebRTC Camera or camera-wall-card. Open the dashboard over HTTPS, because browsers block the microphone on plain HTTP.
-
-The relay listens on `127.0.0.1` and a free port. Both camera entities give its URL, with the camera's login and path. It passes the stream unchanged, except for the backchannel. The relay answers go2rtc's backchannel setup itself and never sends it to the camera. It decodes the voice go2rtc sends and passes it to the camera's speaker. So go2rtc never holds the camera's audio channel, and the siren and the Speaker work right after a talk.
-
-The newest start wins between talk, the `alarm` siren tone and the Speaker. A talk starts with the first speech after a pause and ends after 1 s without speech. `binary_sensor.<base>_intercom` is on while a talk owns the speaker. Talk, the `alarm` tone and the Speaker share one audio session to the camera.
-
-Home Assistant's built-in go2rtc runs on the same host and reaches the relay. A go2rtc server on another host cannot. On a Docker bridge network WebRTC does not connect, because go2rtc offers no host candidate for a Docker address. Run Home Assistant on the host network for talk.
+Report a vulnerability in this project privately, as [SECURITY.md](SECURITY.md) says. Do not open a public issue for it.
 
 ## Development
 
-The camera library `sannce-aio` is the git submodule `lib/`, from the repository `Paol0B/sannce-aio` ([lib/README.md](lib/README.md)). Clone with it:
+The camera library `sannce-aio` is the git submodule `lib/`, from the repository [Paol0B/sannce-aio](https://github.com/Paol0B/sannce-aio) ([lib/README.md](lib/README.md)). Clone with it:
 
 ```sh
 git clone --recurse-submodules https://github.com/Paol0B/ha-sannce.git
@@ -309,6 +369,51 @@ The Home Assistant pytest plugin blocks sockets, so the library tests run withou
 
 To try the library alone against a camera, run `python -m sannce_aio probe HOST --pass PASSWORD` after the install above. It switches the white light on and back unless you add `--no-light`. Forcing the lamp on rewrites the camera's timed window, and the probe does not restore it.
 
-## Bench
+### Bench
 
 `scripts/bench.sh up` starts Home Assistant 2026.10.1 and a simulated camera in Docker, with this integration loaded. `scripts/bench.sh test` starts them fresh, then runs the end-to-end suite and hassfest. A browser on this machine needs `scripts/bench.sh up --host-network` for WebRTC. See [bench/README.md](bench/README.md).
+
+### Quality scale
+
+The integration marks every rule of the Home Assistant integration quality scale, up to Platinum, as done or exempt, except two rules that need publication: brands and dependency-transparency. Hassfest checks seven of the rules. The others rest on the file, the tests and mypy. Home Assistant grades only core integrations, so there is no official badge. [custom_components/sannce/quality_scale.yaml](custom_components/sannce/quality_scale.yaml) gives the status of every rule.
+
+### Contributing
+
+Contributions are welcome under the project's license (Apache-2.0, section 5). Sign off each commit (`git commit -s`) to certify the [Developer Certificate of Origin](https://developercertificate.org/). Never add code, firmware, keys or files copied from the camera vendor's apps or devices.
+
+## Legal
+
+### Trademarks
+
+SANNCE, Tiandy, Home Assistant, ONVIF and the other product names here are trademarks of their owners. They appear only to say which devices and software this project works with. This project is independent: none of those owners make, endorse or support it. The repository uses none of their logos.
+
+### Interoperability
+
+This is an independently written program. Its only purpose is to let a camera you own work with Home Assistant.
+
+- It holds no code, firmware, keys or files from the camera vendor.
+- It logs in through the camera's own login, with your credentials. It does not bypass any access control or copy protection.
+- The protocol notes in [docs/](docs/) describe what goes over the network, as far as interoperability needs.
+
+EU law lets the user of a program study how it works, and decompile it within limits, so that an independent program can work with it ([Directive 2009/24/EC](https://eur-lex.europa.eu/eli/dir/2009/24/oj), art. 5(3) and 6). US law has a similar exemption for interoperability ([17 U.S.C. § 1201(f)](https://www.law.cornell.edu/uscode/text/17/1201)).
+
+If you hold rights in something here and think it should not be published, open an issue or write to paolobertinetti200f4@proton.me. Every request gets a review.
+
+### Privacy and lawful use
+
+You are responsible for how you use the camera.
+
+- Use the integration only with cameras you own or may manage.
+- In the EU, the [GDPR](https://eur-lex.europa.eu/eli/reg/2016/679/oj) applies when a camera films beyond your own private space, for example a street, a shared entrance or a neighbour's garden ([CJEU, C-212/13 Ryneš](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:62013CJ0212)). The [EDPB Guidelines 3/2019](https://www.edpb.europa.eu/our-work-tools/our-documents/guidelines/guidelines-32019-processing-personal-data-through-video_en) explain the duties that follow, such as signs, a clear purpose and short storage.
+- National laws add rules, for example on recording sound, on filming people at work and on signs. Check the rules where the camera is.
+- The integration talks only to the camera. It sends nothing to the author, the vendor or any cloud service. What Home Assistant records and keeps depends on your own setup.
+
+### No warranty
+
+The software comes as is, without warranty. The license excludes liability as far as the law allows (sections 7 and 8 of [LICENSE](LICENSE)). It is not a certified alarm, safety or security system: do not rely on it alone to protect people or property. A firmware update from the vendor can break it at any time.
+
+This is free and open-source software, written and shared without payment and outside any commercial activity, as the EU [Cyber Resilience Act](https://eur-lex.europa.eu/eli/reg/2024/2847/oj) and [Product Liability Directive](https://eur-lex.europa.eu/eli/dir/2024/2853/oj) use the term.
+
+## License
+
+Copyright 2026 Paolo Bertinetti. Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
