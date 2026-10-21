@@ -18,7 +18,7 @@ The library repository, `Paol0B/sannce-aio`, runs the workflows in `lib/.github/
 
 - `lib/` is a submodule, and `actions/checkout` does not fetch it. The jobs `library`, `quality` and `hassfest` and the workflow `e2e.yml` check out `Paol0B/sannce-aio` into `lib/` at the commit `git rev-parse HEAD:lib` prints. They read it with the deploy key in the Actions secret `SANNCE_AIO_DEPLOY_KEY`. A deploy key opens one repository only, so the checkout of this repository does not use it. Without the secret, the checkout uses the workflow token, which reads `sannce-aio` once it is public.
 - Git ignores the library copy in `custom_components/sannce/sannce_aio/`. `scripts/quality.sh` and `scripts/bench.sh` write it from `lib/` with `scripts/vendor-lib.sh` before they use it.
-- The `hacs` job ignores four checks that cannot pass yet: `brands` (no logo pull request), `license` (no license), `hacsjson` and `integration_manifest` (HACS reads both files without a token, so a private repository fails). Meanwhile `tests/components/sannce/test_manifest.py` and hassfest cover `hacs.json` and `manifest.json`. All four ignores go away in `ci.yml` when the repositories are public and licensed. `brands` also needs the logo pull request merged.
+- The `hacs` job ignores the `brands` check until the logo pull request is merged.
 - Every job runs on `ubuntu-24.04` and has a timeout. `ubuntu-latest` moves to Ubuntu 26 on 2026-10-19, so move the runner on purpose, after a test run.
 - Every action is pinned to a full commit SHA, with its version in a comment. Update them by hand.
 - `hacs/action` runs the image `ghcr.io/hacs/action:main`. Its latest release is from 2022, and the image tag floats.
@@ -76,6 +76,4 @@ The integration then installs the library from PyPI instead of carrying a copy. 
 
 ## Open decisions
 
-- **License.** Neither repository has one. Pick one before anything goes public.
-- **Public repositories.** HACS's default list needs a public repository. The `dependency-transparency` rule needs the library source to be public, with tagged releases built by CI. Both repositories are private now.
-- **Brands.** Home Assistant shows the integration's logo from `home-assistant/brands`. That needs a pull request there with a logo for the domain `sannce`. Until it is merged, the HACS `brands` check and the quality scale rule `brands` stay failing, and CI ignores them.
+- **Brands.** Home Assistant shows the integration's logo from `home-assistant/brands`. That needs a pull request there with a logo for the domain `sannce`. Until it is merged, the HACS `brands` check and the quality scale rule `brands` stay failing, and CI ignores them. The logo must be our own: the SANNCE logo is a trademark, and using it needs the owner's permission.

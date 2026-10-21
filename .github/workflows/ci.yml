@@ -100,7 +100,4 @@ jobs:
           category: integration
           comment: "false"
           # brands: the logo pull request to home-assistant/brands is not made yet
-          # license: no license is chosen yet
-          # hacsjson: HACS reads hacs.json from raw.githubusercontent.com without a token, so a private repository fails
-          # integration_manifest: same read of manifest.json, same failure on a private repository
-          ignore: brands license hacsjson integration_manifest
+          ignore: brands
