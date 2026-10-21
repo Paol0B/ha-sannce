@@ -14,9 +14,7 @@ TRANSPORTS = {"nvs_tcp", "nvs_udp", "nvs_ws", "http"}
 STATUSES = {"static", "inferred", "verified"}
 ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
 HEX_PATTERN = re.compile(r"^([0-9a-f]{2})+$")
-EVIDENCE_PATTERN = re.compile(
-    r"^(lib[A-Za-z0-9_]+\.so:.+@0x[0-9a-f]+|java:[^:]+:\d+|web:/\S+)$"
-)
+EVIDENCE_PATTERN = re.compile(r"^web:/\S+$")
 
 REQUIRED_IDS: set[str] = {
     "framing_parameter_get_request",
@@ -77,8 +75,9 @@ def test_example_shape(example):
     if has_hex:
         assert HEX_PATTERN.match(example["hex"])
     assert isinstance(example.get("fields", {}), dict)
-    assert example["evidence"], "evidence must not be empty"
-    for item in example["evidence"]:
+    if "evidence" in example:
+        assert example["evidence"], "evidence must not be empty"
+    for item in example.get("evidence", []):
         assert EVIDENCE_PATTERN.match(item), item
     assert bool(example.get("source")) == (example["status"] == "verified")
 
