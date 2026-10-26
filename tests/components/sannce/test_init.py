@@ -19,7 +19,7 @@ from custom_components.sannce.const import (
 )
 
 from . import HOST, PASSWORD, USERNAME, setup_integration
-from .conftest import FakeRelay, FakeSannceCamera
+from .conftest import FakeRelay, FakeSannceCamera, FakeTranscoder
 
 
 async def test_setup_and_unload_entry(
@@ -94,6 +94,49 @@ async def test_setup_retries_when_the_relay_cannot_listen(
     assert mock_config_entry.error_reason_translation_key == "relay_failed"
     mock_camera.close.assert_awaited_once()
     relay.close.assert_not_awaited()
+
+
+async def test_reload_closes_the_aac_server_and_starts_a_new_one(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    mock_transcoders: list[FakeTranscoder],
+) -> None:
+    await setup_integration(hass, mock_config_entry)
+
+    assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    old, new = mock_transcoders
+    old.close.assert_awaited_once()
+    new.start.assert_awaited_once()
+    new.close.assert_not_awaited()
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+
+
+async def test_setup_retries_when_the_aac_server_cannot_listen(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    mock_relays: list[FakeRelay],
+) -> None:
+    transcoder = FakeTranscoder(lambda stream: stream)
+    transcoder.start.side_effect = OSError("address in use")
+
+    with patch(
+        "custom_components.sannce.coordinator.TranscodeServer", return_value=transcoder
+    ):
+        await setup_integration(hass, mock_config_entry)
+
+    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+    assert mock_config_entry.reason == (
+        f"Cannot open the AAC audio server for {HOST}: address in use"
+    )
+    assert mock_config_entry.error_reason_translation_key == "transcoder_failed"
+    mock_camera.close.assert_awaited_once()
+    (relay,) = mock_relays
+    relay.close.assert_awaited_once()
+    transcoder.close.assert_not_awaited()
 
 
 async def test_unload_stops_audio_before_closing_the_camera(

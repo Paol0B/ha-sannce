@@ -38,6 +38,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: SannceConfigEntry) -> bo
             translation_placeholders={"host": host, "error": str(err)},
         ) from err
     entry.async_on_unload(coordinator.relay.close)
+    try:
+        await coordinator.transcoder.start()
+    except OSError as err:
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="transcoder_failed",
+            translation_placeholders={"host": host, "error": str(err)},
+        ) from err
+    entry.async_on_unload(coordinator.transcoder.close)
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

@@ -2,6 +2,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
+from urllib.parse import urlsplit
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST
@@ -11,7 +12,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from . import lib
 from .audio import AudioPlayer
-from .const import DOMAIN, UPDATE_INTERVAL
+from .const import DOMAIN, RELAY_HOST, UPDATE_INTERVAL
+from .transcode import TranscodeServer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
         )
         self.camera = camera
         self.relay = lib.create_relay(config_entry.data, camera.speaker)
+        self.transcoder = TranscodeServer(hass, self.relay_url)
         self.audio = AudioPlayer(self)
         self.connected = False
         self.base_mode: str | None = None
@@ -59,6 +62,12 @@ class SannceCoordinator(DataUpdateCoordinator[SannceData]):
         camera.on_login_failed(self._handle_login_failed)
         config_entry.async_on_unload(camera.subscribe(self._handle_event))
         config_entry.async_on_unload(camera.speaker.subscribe(self._handle_speaker))
+
+    def relay_url(self, stream: str) -> str:
+        # go2rtc repeats a backchannel SETUP the camera refuses; the relay answers it
+        url = urlsplit(self.camera.rtsp_url(stream))
+        login = url.netloc.rpartition("@")[0]
+        return url._replace(netloc=f"{login}@{RELAY_HOST}:{self.relay.port}").geturl()
 
     @callback
     def async_add_event_listener(

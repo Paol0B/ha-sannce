@@ -265,6 +265,21 @@ class FakeRelay:
         self.port = 18554 + self._number
 
 
+class FakeTranscoder:
+    def __init__(self, source: Callable[[str], str], number: int = 0) -> None:
+        self.source = source
+        self.port = 0
+        self._number = number
+        self.start = AsyncMock(side_effect=self._start)
+        self.close = AsyncMock()
+
+    def url(self, stream: str) -> str:
+        return f"http://127.0.0.1:{self.port}/{stream}"
+
+    async def _start(self) -> None:
+        self.port = 18080 + self._number
+
+
 class FakeProcess:
     def __init__(
         self, stdout: bytes, *, eof: bool, exit_code: int, stderr: bytes = b""
@@ -389,6 +404,21 @@ def mock_relays() -> Generator[list[FakeRelay]]:
 
     with patch("custom_components.sannce.lib.create_relay", side_effect=create):
         yield relays
+
+
+# and every setup starts the AAC server
+@pytest.fixture(autouse=True)
+def mock_transcoders() -> Generator[list[FakeTranscoder]]:
+    transcoders: list[FakeTranscoder] = []
+
+    def create(hass: HomeAssistant, source: Callable[[str], str]) -> FakeTranscoder:
+        transcoders.append(FakeTranscoder(source, len(transcoders)))
+        return transcoders[-1]
+
+    with patch(
+        "custom_components.sannce.coordinator.TranscodeServer", side_effect=create
+    ):
+        yield transcoders
 
 
 @pytest.fixture

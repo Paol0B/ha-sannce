@@ -1,19 +1,22 @@
+from contextvars import ContextVar
 from dataclasses import dataclass
-from urllib.parse import urlsplit
 
 from homeassistant.components.camera import (
     Camera,
     CameraEntityDescription,
     CameraEntityFeature,
 )
+from homeassistant.components.stream import Stream
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import RELAY_HOST
 from .coordinator import SannceConfigEntry, SannceCoordinator
 from .entity import SannceEntity
 
 PARALLEL_UPDATES = 0
+
+# set while this task builds the HLS stream; go2rtc asks from other tasks
+_BUILDING_HLS: ContextVar[bool] = ContextVar("sannce_building_hls", default=False)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -52,9 +55,16 @@ class SannceCameraEntity(SannceEntity, Camera):
     def use_stream_for_stills(self) -> bool:
         return True
 
+    async def async_create_stream(self) -> Stream | None:
+        token = _BUILDING_HLS.set(True)
+        try:
+            return await super().async_create_stream()
+        finally:
+            _BUILDING_HLS.reset(token)
+
     async def stream_source(self) -> str:
-        # go2rtc repeats a backchannel SETUP the camera refuses; the relay answers it
-        url = urlsplit(self.coordinator.camera.rtsp_url(self.entity_description.stream))
-        login = url.netloc.rpartition("@")[0]
-        netloc = f"{login}@{RELAY_HOST}:{self.coordinator.relay.port}"
-        return url._replace(netloc=netloc).geturl()
+        stream = self.entity_description.stream
+        # the HLS stream drops G.711 audio, so it reads the AAC copy
+        if _BUILDING_HLS.get():
+            return self.coordinator.transcoder.url(stream)
+        return self.coordinator.relay_url(stream)

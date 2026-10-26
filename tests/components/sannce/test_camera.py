@@ -7,6 +7,7 @@ from homeassistant.components.camera import (
     async_get_image,
     async_get_stream_source,
 )
+from homeassistant.components.camera.const import DATA_COMPONENT
 from homeassistant.const import (
     ATTR_FRIENDLY_NAME,
     ATTR_SUPPORTED_FEATURES,
@@ -25,7 +26,7 @@ from custom_components.sannce import lib
 from custom_components.sannce.const import DOMAIN
 
 from . import HOST, PASSWORD, USERNAME, setup_integration
-from .conftest import FakeRelay, FakeSannceCamera
+from .conftest import FakeRelay, FakeSannceCamera, FakeTranscoder
 
 
 def relay_url(relay: FakeRelay, path: str) -> str:
@@ -81,6 +82,28 @@ async def test_stream_source_goes_through_the_relay(
     entity_id = camera_id(entity_registry, mock_config_entry, key)
     assert relay.port > 0
     assert await async_get_stream_source(hass, entity_id) == relay_url(relay, path)
+
+
+@pytest.mark.parametrize("key", ["sub", "main"])
+async def test_hls_stream_reads_the_aac_copy(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_camera: FakeSannceCamera,
+    mock_transcoders: list[FakeTranscoder],
+    entity_registry: er.EntityRegistry,
+    key: str,
+) -> None:
+    await setup_integration(hass, mock_config_entry)
+    camera = hass.data[DATA_COMPONENT].get_entity(
+        camera_id(entity_registry, mock_config_entry, key)
+    )
+
+    with patch("homeassistant.components.camera.create_stream") as create_stream:
+        await camera.async_create_stream()
+
+    (transcoder,) = mock_transcoders
+    assert transcoder.port > 0
+    assert create_stream.call_args.args[1] == transcoder.url(key)
 
 
 async def test_cameras_support_streaming(

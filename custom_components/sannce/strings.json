@@ -115,6 +115,9 @@
     },
     "siren_failed": {
       "message": "Cannot sound {entity_id}: {error}"
+    },
+    "transcoder_failed": {
+      "message": "Cannot open the AAC audio server for {host}: {error}"
     }
   },
   "entity": {

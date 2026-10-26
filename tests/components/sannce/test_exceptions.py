@@ -66,8 +66,8 @@ def fields(message: str) -> set[str]:
     return {name for _, name, _, _ in string.Formatter().parse(message) if name}
 
 
-def test_the_integration_raises_ten_errors() -> None:
-    assert len(RAISED) == 10
+def test_the_integration_raises_eleven_errors() -> None:
+    assert len(RAISED) == 11
 
 
 @pytest.mark.parametrize(("where", "call"), RAISED, ids=[where for where, _ in RAISED])
