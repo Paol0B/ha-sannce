@@ -364,7 +364,7 @@ Run the tests from the repository root.
 
 The Home Assistant pytest plugin blocks sockets, so the library tests run without it.
 
-`scripts/quality.sh` runs mypy, mypy again on the library as Python 3.11, the unit tests with at least 95 % line coverage per module, and hassfest's quality scale check. Hassfest checks `quality_scale.yaml` only for core integrations, so the script copies the integration into the hassfest image as a core integration that declares Platinum. It passes when hassfest reports only brands, and `quality_scale.yaml` matches its tests. It needs Docker.
+`scripts/quality.sh` runs mypy, mypy again on the library as Python 3.11, the unit tests with at least 95 % line coverage per module, and hassfest's quality scale check. Hassfest checks `quality_scale.yaml` only for core integrations, so the script copies the integration into the hassfest image as a core integration that declares Platinum. It passes when hassfest reports no error, and `quality_scale.yaml` matches its tests. It needs Docker.
 
 To try the library alone against a camera, run `python -m sannce_aio probe HOST --pass PASSWORD` after the install above. It switches the white light on and back unless you add `--no-light`. Forcing the lamp on rewrites the camera's timed window, and the probe does not restore it.
 
@@ -374,7 +374,7 @@ To try the library alone against a camera, run `python -m sannce_aio probe HOST 
 
 ### Quality scale
 
-The integration marks every rule of the Home Assistant integration quality scale, up to Platinum, as done or exempt, except brands, which waits for our own logo. Hassfest checks seven of the rules. The others rest on the file, the tests and mypy. Home Assistant grades only core integrations, so there is no official badge. [custom_components/sannce/quality_scale.yaml](custom_components/sannce/quality_scale.yaml) gives the status of every rule.
+The integration marks every rule of the Home Assistant integration quality scale, up to Platinum, as done or exempt. Hassfest checks seven of the rules. The others rest on the file, the tests and mypy. Home Assistant grades only core integrations, so there is no official badge. [custom_components/sannce/quality_scale.yaml](custom_components/sannce/quality_scale.yaml) gives the status of every rule.
 
 ### Contributing
 

@@ -18,7 +18,6 @@ The library repository, `Paol0B/sannce-aio`, runs the workflows in `lib/.github/
 
 - `lib/` is a submodule, and `actions/checkout` does not fetch it. The jobs `library` and `quality` and the workflow `e2e.yml` check out `Paol0B/sannce-aio` into `lib/` at the commit `git rev-parse HEAD:lib` prints.
 - Home Assistant installs `sannce-aio` from PyPI, at the version `requirements` in `custom_components/sannce/manifest.json` pins, and so does the bench. The unit tests and mypy use `lib/` instead. A test fails when the pin differs from the version in `lib/pyproject.toml`.
-- The `hacs` job ignores the `brands` check until the logo pull request is merged.
 - Every job runs on `ubuntu-24.04` and has a timeout. `ubuntu-latest` moves to Ubuntu 26 on 2026-10-19, so move the runner on purpose, after a test run.
 - Every action is pinned to a full commit SHA, with its version in a comment. Update them by hand.
 - `hacs/action` runs the image `ghcr.io/hacs/action:main`. Its latest release is from 2022, and the image tag floats.
@@ -43,7 +42,3 @@ A release is a tag pushed in `sannce-aio`. For each release:
 4. In this repository, set `requirements` in `custom_components/sannce/manifest.json` to `["sannce-aio==X.Y.Z"]`, `git add lib` and commit both.
 
 A version on PyPI cannot be replaced: fix a bad release with a new version.
-
-## Open decisions
-
-- **Brands.** Home Assistant shows the integration's logo from `home-assistant/brands`. That needs a pull request there with a logo for the domain `sannce`. Until it is merged, the HACS `brands` check and the quality scale rule `brands` stay failing, and CI ignores them. The logo must be our own: the SANNCE logo is a trademark, and using it needs the owner's permission.

@@ -3,9 +3,7 @@ rules:
     status: exempt
     comment: The integration registers no actions of its own.
   appropriate-polling: done
-  brands:
-    status: todo
-    comment: Needs a pull request to the home-assistant/brands repository.
+  brands: done
   common-modules: done
   config-flow: done
   config-flow-test-coverage: done

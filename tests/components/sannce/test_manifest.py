@@ -1,5 +1,6 @@
 import json
 import re
+import struct
 from importlib.metadata import version
 from pathlib import Path
 
@@ -88,6 +89,22 @@ def test_hacs_json_has_a_name_and_only_keys_hacs_reads() -> None:
 
 def test_hacs_minimum_home_assistant_is_a_calendar_version() -> None:
     assert re.fullmatch(r"\d{4}\.\d{1,2}\.\d+", HACS["homeassistant"])
+
+
+@pytest.mark.parametrize(
+    ("name", "size"),
+    [
+        ("icon.png", 256),
+        ("icon@2x.png", 512),
+        ("dark_icon.png", 256),
+        ("dark_icon@2x.png", 512),
+    ],
+)
+def test_brand_icons_are_square_pngs_of_the_brand_sizes(name: str, size: int) -> None:
+    head = (INTEGRATION_DIR / "brand" / name).read_bytes()[:24]
+
+    assert head[:8] == b"\x89PNG\r\n\x1a\n"
+    assert struct.unpack(">II", head[16:24]) == (size, size)
 
 
 def test_root_readme_exists_for_hacs_to_show() -> None:

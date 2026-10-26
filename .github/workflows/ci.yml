@@ -87,5 +87,3 @@ jobs:
         with:
           category: integration
           comment: "false"
-          # brands: the logo pull request to home-assistant/brands is not made yet
-          ignore: brands

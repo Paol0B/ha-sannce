@@ -75,7 +75,6 @@ EXEMPT = {
     "stale-devices",
     "repair-issues",
 }
-PUBLICATION = {"brands"}
 
 
 def status(rule: str) -> str:
@@ -88,8 +87,8 @@ def test_every_rule_is_listed_once_in_hassfest_order() -> None:
     assert list(RULES) == list(ALL_RULES)
 
 
-def test_only_publication_rules_are_todo() -> None:
-    assert {rule for rule in RULES if status(rule) == "todo"} == PUBLICATION
+def test_no_rule_is_todo() -> None:
+    assert {rule for rule in RULES if status(rule) == "todo"} == set()
     assert {rule for rule in RULES if status(rule) == "exempt"} == EXEMPT
 
 
