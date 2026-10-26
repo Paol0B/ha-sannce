@@ -6,7 +6,7 @@ This repository, `Paol0B/ha-sannce`:
 
 | Workflow | When | What |
 |---|---|---|
-| `.github/workflows/ci.yml` | push and pull request to master, or by hand | `library`: pytest on `lib/tests` and `tests/docs`, Python 3.11 and 3.14. `quality`: a check that the `lib` commit is on master of `sannce-aio`, then `scripts/quality.sh` on Python 3.14. `hassfest`: `scripts/bench.sh hassfest`. `hacs`: HACS validation, category integration. |
+| `.github/workflows/ci.yml` | push and pull request to master, or by hand | `library`: pytest on `lib/tests` and `tests/docs`, Python 3.11 and 3.14. `quality`: a check that the `lib` commit is on master of `sannce-aio`, then `scripts/quality.sh` on Python 3.14. `hassfest`: the action `home-assistant/actions/hassfest`, which HACS asks for. `hacs`: HACS validation, category integration. |
 | `.github/workflows/e2e.yml` | by hand only | `scripts/bench.sh test`: Home Assistant 2026.10.1 and the simulated camera in Docker, then the end-to-end suite and hassfest. It always runs `scripts/bench.sh down` after. A failed run uploads the Home Assistant log as the artifact `home-assistant-log`. |
 
 The library repository, `Paol0B/sannce-aio`, runs the workflows in `lib/.github/workflows/`:
@@ -21,6 +21,7 @@ The library repository, `Paol0B/sannce-aio`, runs the workflows in `lib/.github/
 - Every job runs on `ubuntu-24.04` and has a timeout. `ubuntu-latest` moves to Ubuntu 26 on 2026-10-19, so move the runner on purpose, after a test run.
 - Every action is pinned to a full commit SHA, with its version in a comment. Update them by hand.
 - `hacs/action` runs the image `ghcr.io/hacs/action:main`. Its latest release is from 2022, and the image tag floats.
+- The hassfest action has no releases since 1.0.0, so it is pinned to a master commit. It runs the image `ghcr.io/home-assistant/hassfest` with no tag, the latest Home Assistant. `scripts/bench.sh hassfest` pins the image by digest instead.
 - GitHub lets you start `ci.yml` or `e2e.yml` by hand only after the file is on master: `gh workflow run e2e.yml`.
 - The same checks run on your machine: `scripts/quality.sh`, `scripts/bench.sh hassfest` and `scripts/bench.sh test`. See [Development](../README.md#development).
 
