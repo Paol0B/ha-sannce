@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Paol0B/ha-sannce/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Paol0B/ha-sannce/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Home Assistant 2026.10+](https://img.shields.io/badge/Home%20Assistant-2026.10%2B-41BDF5.svg)](https://www.home-assistant.io/)
+[![Home Assistant 2026.9.4+](https://img.shields.io/badge/Home%20Assistant-2026.9.4%2B-41BDF5.svg)](https://www.home-assistant.io/)
 [![IoT class: local push](https://img.shields.io/badge/IoT%20class-local%20push-brightgreen.svg)](#data-updates)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
 
@@ -81,22 +81,22 @@ The rest is not measured on a camera yet. It follows the protocol spec. The test
 
 ## Requirements
 
-- Home Assistant 2026.10 or newer. Older versions are untested.
+- Home Assistant 2026.9.4 or newer. Older versions are untested.
 - A camera on the same LAN, activated, with an admin password.
 - TCP from Home Assistant to the camera: port 3002 (events), 80 (settings) and 554 (video and speaker).
 - A fixed camera address works best. The integration can follow a new address in one case only. Home Assistant must see the camera's DHCP request. The entry must also match the camera's MAC address or serial number. See [Discovery](#discovery).
 - The `ffmpeg` binary, for the Speaker only. The siren needs none. The official container image has ffmpeg.
+- Internet access after you install or update the integration. Home Assistant then fetches the camera library [sannce-aio](https://pypi.org/project/sannce-aio/) from PyPI.
 
 ## Install
 
 ### HACS
 
-> [!NOTE]
-> HACS cannot install the integration yet. HACS downloads only the files git tracks, and the camera library copy is not one of them. HACS works once `sannce-aio` is on PyPI and `manifest.json` lists it under `requirements`, see [docs/release.md](docs/release.md#after-the-first-pypi-release). Until then, use Manual or Container, over SSH.
+In HACS, open the menu, Custom repositories, and add `https://github.com/Paol0B/ha-sannce` with the type Integration. Download SANNCE, then restart Home Assistant.
 
 ### Manual
 
-Clone the repository with its `lib` submodule, as [Development](#development) says, and run `scripts/vendor-lib.sh`. It copies the camera library into `custom_components/sannce/sannce_aio/` with rsync. Then copy `custom_components/sannce` to `<config>/custom_components/sannce` and restart Home Assistant. Nothing else needs installing.
+Copy `custom_components/sannce` to `<config>/custom_components/sannce` and restart Home Assistant.
 
 ### Container, over SSH
 
@@ -105,7 +105,7 @@ scripts/deploy.sh HOST [CONTAINER] [CONFIG_PATH]
 ENGINE=podman scripts/deploy.sh HOST homeassistant /path/to/config
 ```
 
-The script copies the camera library into the integration with `scripts/vendor-lib.sh`, copies `custom_components/sannce` to `HOST` with rsync, then restarts the container. It needs the `lib` submodule, see [Development](#development).
+The script copies `custom_components/sannce` to `HOST` with rsync, then restarts the container.
 
 | Argument | Meaning | Default |
 |---|---|---|
@@ -325,15 +325,14 @@ git clone --recurse-submodules https://github.com/Paol0B/ha-sannce.git
 
 In a clone made without `--recurse-submodules`, run `git submodule update --init`. After a pull that moves `lib`, run `git submodule update`.
 
-`scripts/vendor-lib.sh` copies the library into `custom_components/sannce/sannce_aio/`, without the simulator, its control API and the CLI. Git ignores that copy. Only `custom_components/sannce/lib.py` imports it. `manifest.json` lists no requirements until the library is on PyPI.
-
-Run `scripts/vendor-lib.sh` before mypy and the Home Assistant tests, and again after `lib/` changes. `scripts/quality.sh`, `scripts/bench.sh` and `scripts/deploy.sh` run it themselves.
+Only `custom_components/sannce/lib.py` imports the library. Home Assistant installs it from PyPI, at the version `manifest.json` pins. The tests and mypy use `lib/`, which `requirements-dev.txt` installs.
 
 To change the library:
 
 1. `git submodule update` leaves `lib/` on a detached HEAD. Run `git -C lib switch master`, or make a branch there.
 2. Commit in `lib/` and push to `sannce-aio`. CI here fails while the `lib` commit is not on master of `sannce-aio`.
 3. In this repository, `git add lib` and commit the new pointer. `git push --recurse-submodules=check` refuses to push while the `lib` commit is not pushed.
+4. Home Assistant gets the change only after a release on PyPI and a new pin in `manifest.json`, see [docs/release.md](docs/release.md#publish-the-library).
 
 What CI runs, how to release the library and what is still open are in [docs/release.md](docs/release.md).
 
@@ -365,7 +364,7 @@ Run the tests from the repository root.
 
 The Home Assistant pytest plugin blocks sockets, so the library tests run without it.
 
-`scripts/quality.sh` runs mypy, mypy again on the library as Python 3.11, the unit tests with at least 95 % line coverage per module, and hassfest's quality scale check. Hassfest checks `quality_scale.yaml` only for core integrations, so the script copies the integration into the hassfest image as a core integration that declares Platinum. It passes when hassfest reports only brands and dependency-transparency, and `quality_scale.yaml` matches its tests. It needs Docker.
+`scripts/quality.sh` runs mypy, mypy again on the library as Python 3.11, the unit tests with at least 95 % line coverage per module, and hassfest's quality scale check. Hassfest checks `quality_scale.yaml` only for core integrations, so the script copies the integration into the hassfest image as a core integration that declares Platinum. It passes when hassfest reports only brands, and `quality_scale.yaml` matches its tests. It needs Docker.
 
 To try the library alone against a camera, run `python -m sannce_aio probe HOST --pass PASSWORD` after the install above. It switches the white light on and back unless you add `--no-light`. Forcing the lamp on rewrites the camera's timed window, and the probe does not restore it.
 
@@ -375,7 +374,7 @@ To try the library alone against a camera, run `python -m sannce_aio probe HOST 
 
 ### Quality scale
 
-The integration marks every rule of the Home Assistant integration quality scale, up to Platinum, as done or exempt, except two rules that need publication: brands and dependency-transparency. Hassfest checks seven of the rules. The others rest on the file, the tests and mypy. Home Assistant grades only core integrations, so there is no official badge. [custom_components/sannce/quality_scale.yaml](custom_components/sannce/quality_scale.yaml) gives the status of every rule.
+The integration marks every rule of the Home Assistant integration quality scale, up to Platinum, as done or exempt, except brands, which waits for our own logo. Hassfest checks seven of the rules. The others rest on the file, the tests and mypy. Home Assistant grades only core integrations, so there is no official badge. [custom_components/sannce/quality_scale.yaml](custom_components/sannce/quality_scale.yaml) gives the status of every rule.
 
 ### Contributing
 

@@ -1,12 +1,11 @@
 # Bench
 
-The bench runs the integration in a real Home Assistant against a simulated camera, in Docker. It checks that our parts work together: the config flow, the bundled library, ffmpeg, stream and the manifest. It does not check that a camera speaks this protocol, because the simulator follows the same spec as the library. On hardware day it is the starting point.
+The bench runs the integration in a real Home Assistant against a simulated camera, in Docker. It checks that our parts work together: the config flow, the library from PyPI, ffmpeg, stream and the manifest. It does not check that a camera speaks this protocol, because the simulator follows the same spec as the library. On hardware day it is the starting point.
 
 ## Requirements
 
 - Linux with Docker and Compose 2. Tested with Docker 29.1.3 and Compose 2.40.3.
 - The `.venv` from [Development](../README.md#development). `scripts/bench.sh` runs its Python.
-- rsync. `scripts/vendor-lib.sh` copies the library into the integration with it.
 - The `lib/` submodule, checked out: `git submodule update --init`. The camera image builds from it.
 - About 4.5 GB of disk for the images. Home Assistant alone is 3.5 GB.
 - Nothing else on `127.0.0.1:8123` or on the Docker subnet `172.31.250.0/24`.
@@ -21,9 +20,9 @@ The bench runs the integration in a real Home Assistant against a simulated came
 | `scripts/bench.sh test` | Reset, run the end-to-end suite on the bridge, then hassfest. |
 | `scripts/bench.sh event KIND [on\|off]` | Push an event: `motion`, `vehicle`, `intrusion`, `line`, `tamper` or `video_loss`. The default is `on`. |
 | `scripts/bench.sh audio FILE` | Save the last talk session as WAV. |
-| `scripts/bench.sh hassfest` | Copy the library into the integration, then validate `custom_components/sannce` with hassfest. |
+| `scripts/bench.sh hassfest` | Validate `custom_components/sannce` with hassfest. |
 
-- `up` copies `lib/src/` into the integration and rebuilds the camera image. If Home Assistant is already running, `up` restarts it, because Home Assistant reads custom integrations only when it starts.
+- `up` rebuilds the camera image from `lib/`. Home Assistant installs the library from PyPI, at the version `manifest.json` pins, so it needs internet access. If Home Assistant is already running, `up` restarts it, because Home Assistant reads custom integrations only when it starts.
 - `test` removes the camera from Home Assistant at the end. Run `up` to add it back.
 
 ## Network modes

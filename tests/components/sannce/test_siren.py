@@ -35,13 +35,13 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
+from sannce_aio.backchannel import Backchannel
+from sannce_aio.speaker import Speaker
 
 from custom_components.sannce import audio, lib
 from custom_components.sannce import siren as sannce_siren
 from custom_components.sannce.audio import SAMPLE_RATE, SAMPLE_WIDTH
 from custom_components.sannce.const import DOMAIN
-from custom_components.sannce.sannce_aio.backchannel import Backchannel
-from custom_components.sannce.sannce_aio.speaker import Speaker
 
 from . import setup_integration
 from .conftest import ALL_CAPS, FakeSannceCamera

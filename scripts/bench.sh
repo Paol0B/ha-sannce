@@ -32,7 +32,6 @@ need_python() {
 }
 
 start() {
-  "$here/vendor-lib.sh"
   mkdir -p "$bench/media"
   [[ -d "$bench/ha-config" ]] || cp -r "$bench/ha-template" "$bench/ha-config"
   local running
@@ -83,6 +82,6 @@ case $command in
   test) [[ $# -eq 0 ]] || usage; need_python; run_suite ;;
   event) [[ $# -ge 1 && $# -le 2 ]] || usage; need_python; "$python" "$client" event "$@" ;;
   audio) [[ $# -eq 1 ]] || usage; need_python; "$python" "$client" audio "$1" ;;
-  hassfest) [[ $# -eq 0 ]] || usage; "$here/vendor-lib.sh"; run_hassfest ;;
+  hassfest) [[ $# -eq 0 ]] || usage; run_hassfest ;;
   *) usage ;;
 esac

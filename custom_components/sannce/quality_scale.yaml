@@ -9,11 +9,7 @@ rules:
   common-modules: done
   config-flow: done
   config-flow-test-coverage: done
-  dependency-transparency:
-    status: todo
-    comment: >-
-      The library is vendored until sannce-aio is on PyPI, built by CI from a
-      public repository with tagged releases.
+  dependency-transparency: done
   docs-actions:
     status: exempt
     comment: The integration registers no actions of its own.

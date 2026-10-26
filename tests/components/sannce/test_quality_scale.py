@@ -75,7 +75,7 @@ EXEMPT = {
     "stale-devices",
     "repair-issues",
 }
-PUBLICATION = {"brands", "dependency-transparency"}
+PUBLICATION = {"brands"}
 
 
 def status(rule: str) -> str:

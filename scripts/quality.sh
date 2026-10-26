@@ -6,17 +6,15 @@ repo="$(dirname "$here")"
 python="$repo/.venv/bin/python"
 hassfest_image="ghcr.io/home-assistant/hassfest@sha256:4b1adfb1e0a37710af0390708eb8000230b80b2193ccffbeed0a901fa9765181"
 min_coverage=95
-# brands and dependency-transparency need publication, so they stay todo
+# brands needs our own logo, so it stays todo
 publication_only="* [ERROR] [QUALITY_SCALE] Quality scale tier bronze requires quality scale rules to be met:
-  brands: todo
-  dependency-transparency: todo"
+  brands: todo"
 
 if [[ ! -x "$python" ]]; then
   echo "error: $python is missing; set up .venv as README.md, Development, says" >&2
   exit 1
 fi
 cd "$repo"
-"$here/vendor-lib.sh"
 
 echo "== mypy"
 "$python" -m mypy
@@ -75,7 +73,7 @@ if ! grep -qx "Integrations: 1" <<<"$output"; then
 fi
 reported=$(sed -n '/^Integration sannce/,/^$/p' <<<"$output" | sed '1d;/^$/d')
 if [[ $reported != "$publication_only" ]]; then
-  echo "error: hassfest must report exactly brands and dependency-transparency" >&2
+  echo "error: hassfest must report exactly brands" >&2
   exit 1
 fi
-echo "quality scale: yaml consistent, no hassfest errors beyond the publication rules"
+echo "quality scale: yaml consistent, no hassfest errors beyond brands"

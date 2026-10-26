@@ -1,5 +1,6 @@
 import json
 import re
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ HACS_KEYS = {
     "persistent_directory",
     "zip_release",
 }
-VENDORED = "custom_components.sannce.sannce_aio"
+LIBRARY = "sannce_aio"
 # 3CDA6D, BC516C and E4E66C: IEEE MA-L assignments to Tiandy Technologies
 # (standards-oui.ieee.org/oui/oui.txt); D03BF4: the I91FX's own (docs/protocol.md)
 CAMERA_PREFIXES = ("3CDA6D", "BC516C", "D03BF4", "E4E66C")
@@ -46,8 +47,8 @@ def test_manifest_describes_a_local_push_device() -> None:
     assert MANIFEST["iot_class"] == "local_push"
 
 
-def test_manifest_requires_nothing_while_the_library_is_vendored() -> None:
-    assert MANIFEST["requirements"] == []
+def test_manifest_pins_the_library_version_in_lib() -> None:
+    assert MANIFEST["requirements"] == [f"sannce-aio=={version('sannce-aio')}"]
 
 
 def test_manifest_depends_on_the_audio_components() -> None:
@@ -108,12 +109,12 @@ def test_docs_list_the_dhcp_prefixes(doc: str) -> None:
         assert f"`{prefix[:2]}:{prefix[2:4]}:{prefix[4:]}`" in text
 
 
-def test_lib_exports_come_from_the_vendored_library() -> None:
+def test_lib_exports_come_from_the_library() -> None:
     modules = {
         name: getattr(lib, name).__module__
         for name in lib.__all__
         if name not in {"create_camera", "create_relay"}
     }
 
-    foreign = {k: v for k, v in modules.items() if not v.startswith(f"{VENDORED}.")}
+    foreign = {k: v for k, v in modules.items() if not v.startswith(f"{LIBRARY}.")}
     assert foreign == {}

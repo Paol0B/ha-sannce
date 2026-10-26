@@ -1,13 +1,14 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import sannce_aio
 from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from custom_components.sannce import lib, sannce_aio
+from custom_components.sannce import lib
 from custom_components.sannce.const import (
     CONF_HTTP_PORT,
     CONF_NVS_PORT,
