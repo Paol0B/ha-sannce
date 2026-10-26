@@ -4,7 +4,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Home Assistant 2026.9.4+](https://img.shields.io/badge/Home%20Assistant-2026.9.4%2B-41BDF5.svg)](https://www.home-assistant.io/)
 [![IoT class: local push](https://img.shields.io/badge/IoT%20class-local%20push-brightgreen.svg)](#data-updates)
-[![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
+[![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)](#status)
 
 Home Assistant integration for SANNCE wired IP cameras. It talks to the camera over your LAN and needs no cloud account.
 
